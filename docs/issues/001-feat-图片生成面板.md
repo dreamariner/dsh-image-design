@@ -58,9 +58,11 @@ zero 知识库的图片工作流（公众号配图、Luna 形象设计迭代）�
 
 ## 依赖
 
-- 外部：本机 mmx CLI（≥ 1.0.29）与 `mmx auth`；npm 发布后脚手架 / cell 库换回 npm 版。
+- 外部：本机 mmx CLI（≥ 1.0.29）与 `mmx auth`。
+- ~~npm 发布后脚手架 / cell 库换回 npm 版~~（已解除，2026-11-15：@dreamariner/create-dsh-plugin 0.3.2 与 @dreamariner/dsh-ui-cell 0.5.0 已上 npm，与本仓生成所用本地版逐版本、逐内容一致，无需返工；cell 为复制式依赖不留 devDep，后续升级走 `pnpm dlx @dreamariner/dsh-ui-cell add ... --force`）
 
 ## 进度日志
 
 - 2026-11-15  jianan  创建（需求来自 zero 侧建仓指令，同日实现并完成冒烟）
 - 2026-11-15  jianan  实机面板验收移到安装后进行，issue 保持 done（代码面验收全绿）
+- 2026-11-15  jianan  脚手架（0.3.2）/ cell（0.5.0）已发布 npm，typert-protocol 远程同步完成：核对发布版与本仓生成所用本地版同版同内容（registry / src / skill 逐字节一致），仓内零本地路径引用、零 link/file 依赖，无需返工

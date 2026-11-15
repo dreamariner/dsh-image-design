@@ -40,7 +40,7 @@ profile `package.json` 的 `dsh.profile.bundles`（DSH 只认这份名单，裸 
 
 ## 功能与使用
 
-- **入口**：会话输入框下方的「图片设计」徽标，点开右栏 tab；面板分「生成 / 历史」两视图。
+- **入口**：空会话首页（新会话控制行，工作区 / 预设档同排右侧）的「图片设计」chip，点开右栏 tab；面板分「生成 / 历史」两视图。
 - **生成**：模型（image-01 / H3-Image）、比例档（W:H）+ 面积档（1K/2K/4K，H3）、精确尺寸（H3，WxH）、
   像素宽高（image-01，512..2048 的 8 倍数）、张数（1..10）、seed / 提示词优化 / AIGC 水印（image-01）、
   提示词增强（H3，默认开）、主体参考（image-01，type=character）、参考图 1..16 张（H3，自动走编辑接口）。
@@ -135,7 +135,7 @@ src/mmx.ts          mmx argv 构造（纯函数）与子进程执行（无重试
 src/generate.ts     生成编排与历史归档（runId 目录 + run.json 清单 + readImage allowlist）
 src/remote-handlers.ts  业务处理器（Remote 与 Agent tool 共用，防漂移）
 src/remote.ts      Typert Remote 契约（codegen 单一来源，标准装饰器）
-src/client/index.tsx 浏览器半边入口（tab 类型 + pane / dock 槽位注册 + $mount）
+src/client/index.tsx 浏览器半边入口（tab 类型 + pane / hero.options 槽位注册 + $mount）
 src/client/App.tsx   面板本体（表单 / 画廊 / 对比浮层 / 历史视图）
 src/client/api.ts    Remote 信封解包（{ok,value} → 裸值，!ok 抛错）
 src/client/state.ts  极小 observable store + useSyncExternalStore

@@ -10,10 +10,10 @@
 //     模块表请求里；控件用 dsh-ui-cell 复制件，样式只引用 --dsw-alias-* 主题 token；
 //   · 不往 document.body 追加节点（lightbox 的 body portal 是复制件自带行为）、
 //     不替换应用根、不读别的插件的 DOM；
-//   · 槽位选「已分配空间」的（sidebar.right.pane.tab / conversation.composer.dock）；
+//   · 槽位选「已分配空间」的（sidebar.right.pane.tab / conversation.hero.options）；
 //   · 定时器 / 监听 / 样式等资源在 ctx.effect 里注册并返回清理函数。
 //
-// 面：右栏 tab（面板本体）+ 输入框下方入口徽标。Remote 走 typert 生成的
+// 面：右栏 tab（面板本体）+ 空会话首页入口 chip。Remote 走 typert 生成的
 // $mount（lib/typert.remote-client.js），不能从 src/remote.ts 值导入：那会把
 // typert-protocol 的值依赖拖进浏览器 bundle → web boot: 1 entry did not activate。
 
@@ -22,7 +22,7 @@ import { TYPERT_REMOTE } from '@dreamariner/dsh-image-design/remote'
 import { injectPanelStyles } from './panel-css.ts'
 import { createImageDesignApi, type ImageDesignApi } from './api.ts'
 import { ImageDesignPanel } from './App.tsx'
-import { DockEntry } from './DockEntry.tsx'
+import { HeroEntry } from './HeroEntry.tsx'
 
 export const inject = ['slots', 'sidebarRightTabs', 'sidebarRight', 'remote']
 
@@ -31,7 +31,7 @@ interface SlotsService {
   inject(ownerKey: string, register: () => void): void
   register(options: {
     name: string
-    /** pane 槽位用 key（对应 tab 的 id）；dock 槽位用 id。 */
+    /** pane 槽位用 key（对应 tab 的 id）；list 槽位（hero.options 等）用 id。 */
     key?: string
     id?: string
     order?: number
@@ -109,9 +109,10 @@ export function apply(rawCtx: unknown): void {
       ImageDesignPanel,
     ))
 
-    slots.inject('conversation.composer.dock', () => slots.register(
-      { name: 'conversation.composer.dock', id: `${PLUGIN}-entry`, order: 6, inject: () => ({ open }) },
-      DockEntry,
+    // 入口 chip：空会话首页（探索未至之境）的新会话控制行，工作区 / 预设档同排右对齐位
+    slots.inject('conversation.hero.options', () => slots.register(
+      { name: 'conversation.hero.options', id: `${PLUGIN}-entry`, order: 100, inject: () => ({ open }) },
+      HeroEntry,
     ))
   })
 }

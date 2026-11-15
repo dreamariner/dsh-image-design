@@ -1,0 +1,120 @@
+// 面板与浮层样式（运行期 <style> 注入；第三方插件的 client 构建没有 CSS 管线）。
+//
+// 规范：只消费 --dsw-alias-* / --dsw-radius-* / --dsw-elevation-* 语义 token，
+// 禁字面颜色与主题选择器（dark/light 由宿主 ui-theme 负责）。
+//
+// dsh-ui-cell 复制件（duc-*）的样式文本拼在本注入器里：顺序按 add note 的依赖序
+// （被复用者先注入；复制件的类名共存于同一个 <style>，同特异性规则后者胜）。
+// 插件自有类用 idi- 前缀，不与组件类相撞，拼在最后。
+
+import { styles as buttonStyles } from './ui/button-css.ts'
+import { styles as inputStyles } from './ui/input-css.ts'
+import { styles as textareaStyles } from './ui/textarea-css.ts'
+import { styles as selectStyles } from './ui/select-css.ts'
+import { styles as segmentedControlStyles } from './ui/segmented-control-css.ts'
+import { styles as switchStyles } from './ui/switch-css.ts'
+import { styles as tagStyles } from './ui/tag-css.ts'
+import { styles as shortcutKeysStyles } from './ui/shortcut-keys-css.ts'
+import { styles as tooltipStyles } from './ui/tooltip-css.ts'
+import { styles as spinnerStyles } from './ui/spinner-css.ts'
+import { styles as emptyStyles } from './ui/empty-css.ts'
+import { styles as imagePreviewStyles } from './ui/image-preview-css.ts'
+import { styles as imageLightboxStyles } from './ui/image-lightbox-css.ts'
+import { styles as fieldStyles } from './ui/field-css.ts'
+import { styles as labelStyles } from './ui/label-css.ts'
+import { styles as separatorStyles } from './ui/separator-css.ts'
+
+export const PANEL_CSS = `
+.idi-root { position: relative; display: flex; flex-direction: column;
+  height: 100%; min-width: 0; color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-1); }
+
+.idi-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2); flex: none; }
+.idi-spacer { flex: 1; }
+
+.idi-body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px 16px;
+  display: flex; flex-direction: column; gap: 12px; }
+
+.idi-sec { display: flex; flex-direction: column; gap: 8px; }
+.idi-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.idi-row-wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.idi-grow { flex: 1; min-width: 0; }
+.idi-w80 { width: 80px; flex: none; }
+.idi-w96 { width: 96px; flex: none; }
+
+.idi-hint { font-size: 11px; line-height: 16px; color: var(--dsw-alias-label-tertiary); }
+.idi-error { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px;
+  border: 0.5px solid var(--dsw-alias-state-error-primary); border-radius: var(--dsw-radius-md);
+  color: var(--dsw-alias-state-error-primary); font-size: 12px; line-height: 18px;
+  white-space: pre-wrap; word-break: break-word; }
+.idi-error-dismiss { border: none; background: transparent; cursor: pointer;
+  color: inherit; font-size: 12px; padding: 0 2px; flex: none; }
+
+.idi-runmeta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary); }
+.idi-meta { font-size: 11px; line-height: 16px; color: var(--dsw-alias-label-tertiary);
+  word-break: break-all; }
+.idi-revised { font-size: 11px; line-height: 16px; color: var(--dsw-alias-label-secondary);
+  white-space: pre-wrap; word-break: break-word; max-height: 120px; overflow-y: auto;
+  padding: 6px 8px; border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-sm); background: var(--dsw-alias-bg-base); }
+.idi-revised-toggle { border: none; background: transparent; cursor: pointer;
+  padding: 0; font-size: 11px; line-height: 16px;
+  color: var(--dsw-alias-label-tertiary); text-align: left; }
+.idi-revised-toggle:hover { color: var(--dsw-alias-label-secondary); }
+
+.idi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px; }
+.idi-cell { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 6px;
+  border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-base); }
+.idi-cell[data-selected="true"] { border-color: var(--dsw-alias-state-business-primary); }
+.idi-cell-head { display: flex; align-items: center; gap: 4px; min-height: 20px; }
+.idi-thumb { cursor: zoom-in; border: none; padding: 0; background: transparent; width: 100%; }
+.idi-cell-fail { display: flex; align-items: center; justify-content: center;
+  height: 120px; font-size: 11px; line-height: 16px; color: var(--dsw-alias-state-error-primary);
+  text-align: center; padding: 8px; word-break: break-word; }
+.idi-check { accent-color: var(--dsw-alias-state-business-primary); margin: 0; flex: none; }
+
+.idi-hist { display: flex; flex-direction: column; gap: 6px; }
+.idi-hist-row { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px;
+  border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-md);
+  cursor: pointer; background: var(--dsw-alias-bg-base); text-align: left; width: 100%; }
+.idi-hist-row:hover { border-color: var(--dsw-alias-state-business-primary); }
+.idi-hist-main { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.idi-hist-prompt { font-size: 12px; line-height: 18px;
+  color: var(--dsw-alias-label-secondary); overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+
+.idi-compare { position: absolute; inset: 0; z-index: 20;
+  background: var(--dsw-alias-bg-base); display: flex; flex-direction: column; }
+.idi-compare-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2); flex: none; }
+.idi-compare-body { flex: 1; min-height: 0; display: grid; grid-auto-flow: column;
+  grid-auto-columns: minmax(240px, 1fr); overflow: auto; }
+.idi-compare-col { display: flex; flex-direction: column; gap: 6px; min-width: 0;
+  padding: 8px; border-right: 0.5px solid var(--dsw-alias-border-l2); }
+.idi-compare-img { flex: 1; min-height: 160px; display: flex; align-items: center;
+  justify-content: center; overflow: auto; }
+.idi-compare-img img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+.idi-reflist { display: flex; flex-direction: column; gap: 6px; }
+.idi-refrow { display: flex; gap: 6px; align-items: center; min-width: 0; }
+`
+
+const CELL_STYLES = [
+  buttonStyles, inputStyles, textareaStyles, selectStyles, segmentedControlStyles,
+  switchStyles, tagStyles, shortcutKeysStyles, tooltipStyles, spinnerStyles,
+  emptyStyles, imagePreviewStyles, imageLightboxStyles, fieldStyles, labelStyles,
+  separatorStyles,
+]
+
+export function injectPanelStyles(): () => void {
+  const tag = document.createElement('style')
+  tag.dataset.plugin = '@dreamariner/dsh-image-design'
+  tag.dataset.pluginCss = '@dreamariner/dsh-image-design/panel.css'
+  tag.textContent = [PANEL_CSS, ...CELL_STYLES].join('\n')
+  document.head.appendChild(tag)
+  return () => { tag.remove() }
+}

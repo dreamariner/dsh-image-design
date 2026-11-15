@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36">
+  <!-- 图片设计：圆角画框 + 山形与太阳（图片语义）+ 右上生成火花（AI 生成语义）。
+       透明背景，青到蓝的双色对角渐变，与 DSH 内置插件图标的风格同族。原创图形。
+       约束：SVG，≤ 256 KiB，路径不出包目录。 -->
+  <defs>
+    <linearGradient id="idi-g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#41d1c8"/>
+      <stop offset="1" stop-color="#2f7cf6"/>
+    </linearGradient>
+  </defs>
+  <rect x="4.5" y="7.5" width="26" height="22" rx="4.5" fill="none" stroke="url(#idi-g)" stroke-width="2.6"/>
+  <circle cx="12.5" cy="14.5" r="2.4" fill="url(#idi-g)"/>
+  <path d="M8 26l6.5-7.5 4.5 5 3.5-4 5.5 6.5" fill="none" stroke="url(#idi-g)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M29 3l1.2 2.8L33 7l-2.8 1.2L29 11l-1.2-2.8L25 7l2.8-1.2z" fill="url(#idi-g)"/>
+</svg>

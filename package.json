@@ -1,0 +1,28 @@
+{
+  "name": "dsh-image-design-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@11.7.0",
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm -r --parallel dev",
+    "profile:add": "node scripts/profile-add.mjs",
+    "dsh:start": "node scripts/dsh-ctl.mjs start",
+    "dsh:restart": "node scripts/dsh-ctl.mjs restart",
+    "dsh:stop": "node scripts/dsh-ctl.mjs stop",
+    "dsh:status": "node scripts/dsh-ctl.mjs status",
+    "dsh:probe": "node scripts/dsh-ctl.mjs probe",
+    "dev:hmr": "node scripts/dev-hmr.mjs",
+    "prepare": "pnpm -r build",
+    "preinstall": "node scripts/ensure-protocol.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "typescript": "^5.9",
+    "vitest": "^5.0.3"
+  }
+}

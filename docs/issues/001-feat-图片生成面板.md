@@ -54,7 +54,7 @@ zero 知识库的图片工作流（公众号配图、Luna 形象设计迭代）�
 - [x] `--dry-run` 对照真 mmx 1.0.29（image-01 与 H3 两条 argv 路径均被接受）
 - [x] 真实端到端冒烟：image-01 512x512 x2（8.7s 出 2 张 jpg，落盘 / 清单 / allowlist 读图全通）
 - [x] H3 回告解析实测（sizes / revised_prompts / success_count）
-- [ ] 装进 DSH 实例实机验收（pnpm profile:add + 重启实例，待做）
+- [x] 装进 DSH 实例实机验收（2026-11-15：profile:add 装进 desktop profile，dsh:restart 后 dsh:probe 确认 active；web 端实机走通「进会话 → 徽标 → 面板 → 生成 n=2 → 画廊 → 历史 → 对比 → lightbox」全链路，两张 1024x1024 正常落盘归档与展示）
 
 ## 依赖
 
@@ -65,4 +65,5 @@ zero 知识库的图片工作流（公众号配图、Luna 形象设计迭代）�
 
 - 2026-11-15  jianan  创建（需求来自 zero 侧建仓指令，同日实现并完成冒烟）
 - 2026-11-15  jianan  实机面板验收移到安装后进行，issue 保持 done（代码面验收全绿）
+- 2026-11-15  jianan  实机验收完成，验收中发现并修复一处：缩略图 img 的 loading="lazy" 在面板容器内不触发加载（blob 字节与 URL 均正常，Chromium 懒加载启发式在此布局下不动），改默认 eager 后全通。验收期临时探针（window.__idi）已移除
 - 2026-11-15  jianan  脚手架（0.3.2）/ cell（0.5.0）已发布 npm，typert-protocol 远程同步完成：核对发布版与本仓生成所用本地版同版同内容（registry / src / skill 逐字节一致），仓内零本地路径引用、零 link/file 依赖，无需返工

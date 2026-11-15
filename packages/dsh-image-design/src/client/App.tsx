@@ -478,7 +478,7 @@ function ImageCell({ run, img }: { run: RunView; img: { file: string; size?: str
           aria-label="放大查看"
           onClick={() => { setState({ lightbox: { url, alt: img.file } }) }}
         >
-          <img src={url} alt={img.file} loading="lazy" style={{ width: '100%', borderRadius: 'var(--dsw-radius-sm)', display: 'block' }} />
+          <img src={url} alt={img.file} style={{ width: '100%', borderRadius: 'var(--dsw-radius-sm)', display: 'block' }} />
         </button>
       ) : (
         <div className="idi-cell-fail">{broken ? '读取失败' : <Spinner />}</div>

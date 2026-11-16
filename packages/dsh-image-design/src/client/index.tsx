@@ -10,10 +10,11 @@
 //     模块表请求里；控件用 dsh-ui-cell 复制件，样式只引用 --dsw-alias-* 主题 token；
 //   · 不往 document.body 追加节点（lightbox 的 body portal 是复制件自带行为）、
 //     不替换应用根、不读别的插件的 DOM；
-//   · 槽位选「已分配空间」的（sidebar.right.pane.tab / conversation.hero.options）；
+//   · 槽位选「已分配空间」的（sidebar.right.pane.tab）；
 //   · 定时器 / 监听 / 样式等资源在 ctx.effect 里注册并返回清理函数。
 //
-// 面：右栏 tab（面板本体）+ 空会话首页入口 chip。Remote 走 typert 生成的
+// 面：右栏 tab（面板本体）+ 指南页条目（右栏新 tab 首页清单，点条目即打开本 tab）。
+// Remote 走 typert 生成的
 // $mount（lib/typert.remote-client.js），不能从 src/remote.ts 值导入：那会把
 // typert-protocol 的值依赖拖进浏览器 bundle → web boot: 1 entry did not activate。
 
@@ -22,7 +23,6 @@ import { TYPERT_REMOTE } from '@dreamariner/dsh-image-design/remote'
 import { injectPanelStyles } from './panel-css.ts'
 import { createImageDesignApi, type ImageDesignApi } from './api.ts'
 import { ImageDesignPanel } from './App.tsx'
-import { HeroEntry } from './HeroEntry.tsx'
 
 export const inject = ['slots', 'sidebarRightTabs', 'sidebarRight', 'remote']
 
@@ -31,7 +31,7 @@ interface SlotsService {
   inject(ownerKey: string, register: () => void): void
   register(options: {
     name: string
-    /** pane 槽位用 key（对应 tab 的 id）；list 槽位（hero.options 等）用 id。 */
+    /** pane 槽位用 key（对应 tab 的 id）；list 槽位用 id。 */
     key?: string
     id?: string
     order?: number
@@ -49,6 +49,16 @@ interface SidebarRightTabsService {
     priority: 'fallback' | 'primary'
     keepMounted?: boolean
     title: () => string
+    /**
+     * 指南页条目（右栏新 tab 的首页清单）：点条目即打开本类型的页。
+     * 这是本插件的主入口：右栏 tab 是 page 类型且 patterns 为空，宿主不会自动显示它。
+     */
+    guide?: readonly {
+      id: string
+      order: number
+      title: () => string
+      description?: () => string
+    }[]
   }): void
 }
 
@@ -92,7 +102,6 @@ export function apply(rawCtx: unknown): void {
   ctx.inject(['remote.imageDesign', 'sidebarRight'], (scoped) => {
     void mounted
     const api = createImageDesignApi(scoped.remote.imageDesign as unknown)
-    const open = (): void => { scoped.sidebarRight.openTab(KIND) }
 
     ctx.effect(() => sidebarRightTabs.register({
       id: TAB_ID,
@@ -101,18 +110,19 @@ export function apply(rawCtx: unknown): void {
       priority: 'fallback',
       keepMounted: true,
       title: () => '图片设计',
+      // 指南页条目（右栏新 tab 首页的清单）：点「图片设计」即打开本 tab
+      guide: [{
+        id: TAB_ID,
+        order: 100,
+        title: () => '图片设计',
+        description: () => '用图片模型生成图片：参数设置、结果画廊与对比、历史回看',
+      }],
     }), `${PLUGIN}: tab type`)
 
     slots.inject('sidebar.right.pane.tab', () => slots.register(
       { name: 'sidebar.right.pane.tab', key: TAB_ID, inject: () => ({ api }) },
       // slot 组件签名由宿主裁定（inject() props），与 ImageDesignPanel 的 api prop 对齐
       ImageDesignPanel,
-    ))
-
-    // 入口 chip：空会话首页（探索未至之境）的新会话控制行，工作区 / 预设档同排右对齐位
-    slots.inject('conversation.hero.options', () => slots.register(
-      { name: 'conversation.hero.options', id: `${PLUGIN}-entry`, order: 100, inject: () => ({ open }) },
-      HeroEntry,
     ))
   })
 }

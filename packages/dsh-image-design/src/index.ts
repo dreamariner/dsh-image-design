@@ -10,10 +10,10 @@
 // 面：① Agent tool（dsh-image-design_generate，与面板 Remote 共用同一套 handlers）
 //      ② Typert Remote（client 数据通道，契约见 src/remote.ts）
 
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { Config, resolveConfig, KNOWN_KEYS, type ImageDesignConfig } from './config.ts'
+import { defaultOutDir } from './out-dir.ts'
 import { ImageDesignRemote } from './remote.ts'
 import { createImageDesignHandlers, type ImageDesignDeps } from './remote-handlers.ts'
 import type { ImageModel, RunRecord } from './contract.ts'
@@ -49,10 +49,8 @@ function workspaceRootOf(ctx: Context): string | null {
   }
 }
 
-/** 输出目录解析：配置优先，其次工作区，最后 ~/.dsh 存储区。 */
-export function defaultOutDir(workspaceRoot: string | null): string {
-  return workspaceRoot !== null ? join(workspaceRoot, 'image-design') : join(homedir(), '.dsh', 'storages', 'dsh-image-design', 'outputs')
-}
+/** 重导出：defaultOutDir 的实现拆到 out-dir.ts（纯函数零依赖，可单测），公开出口不变。 */
+export { defaultOutDir }
 
 function parseModel(v: string): ImageModel {
   return v === 'MiniMax-H3-Image' ? 'MiniMax-H3-Image' : 'image-01'

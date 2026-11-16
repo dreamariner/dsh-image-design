@@ -8,8 +8,8 @@ export interface ImageDesignConfig {
   /** mmx 可执行文件（名字或绝对路径）。默认走 PATH 里的 mmx（npm i -g mmx-cli）。 */
   mmxBin: string
   /**
-   * 产出根目录。留空 = 自动：有工作区用 `<工作区根>/image-design`，
-   * 取不到工作区则回落 `~/.dsh/storages/dsh-image-design/outputs`。
+   * 产出根目录。留空 = 自动：有工作区用 `<工作区根>/.image-design`（点开头的隐藏目录，
+   * 产出是过程数据，不与知识资产混层），取不到工作区则回落 `~/.dsh/storages/dsh-image-design/outputs`。
    */
   outDir: string
   /**

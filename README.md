@@ -40,7 +40,7 @@ profile `package.json` 的 `dsh.profile.bundles`（DSH 只认这份名单，裸 
 
 ## 功能与使用
 
-- **入口**：空会话首页（新会话控制行，工作区 / 预设档同排右侧）的「图片设计」chip，点开右栏 tab；面板分「生成 / 历史」两视图。
+- **入口**：右栏「新标签页」首页的工具清单（指南页）里的「图片设计」条目，点条目即打开右栏 tab；面板分「生成 / 历史」两视图。
 - **生成**：模型（image-01 / H3-Image）、比例档（W:H）+ 面积档（1K/2K/4K，H3）、精确尺寸（H3，WxH）、
   像素宽高（image-01，512..2048 的 8 倍数）、张数（1..10）、seed / 提示词优化 / AIGC 水印（image-01）、
   提示词增强（H3，默认开）、主体参考（image-01，type=character）、参考图 1..16 张（H3，自动走编辑接口）。
@@ -59,7 +59,7 @@ profile `package.json` 的 `dsh.profile.bundles`（DSH 只认这份名单，裸 
 | 键 | 默认 | 说明 |
 |---|---|---|
 | `mmxBin` | `mmx` | mmx 可执行文件（名字或绝对路径）；本机没有先 `npm i -g mmx-cli` 并 `mmx auth login` |
-| `outDir` | 空 | 产出根目录；留空自动：有工作区用 `<工作区根>/image-design`，否则 `~/.dsh/storages/dsh-image-design/outputs` |
+| `outDir` | 空 | 产出根目录；留空自动：有工作区用 `<工作区根>/.image-design`（点开头的隐藏目录，产出是过程数据），否则 `~/.dsh/storages/dsh-image-design/outputs` |
 | `timeoutMs` | `660000` | mmx 子进程超时（毫秒），必须 ≥ 600000（服务端最长等待） |
 | `defaultModel` | `image-01` | 面板与 tool 未显式指定模型时的默认值 |
 
@@ -129,13 +129,14 @@ scripts/             项目共用脚本（一仓一份，add 插件不复制）
 packages/dsh-image-design/
 src/index.ts        宿主半边入口（apply + inject + Config + Agent tool）
 src/config.ts       配置 schema（schemastery，peer 共享宿主实例）
+src/out-dir.ts      产出根目录解析（纯函数零依赖，单测直接引入）
 src/contract.ts     wire 契约类型唯一事实源（ImageModel / GenerateParams / RunRecord 等）
 src/types.ts        公开类型子路径（typert 生成器要求边界类型从非根子路径导出）
 src/mmx.ts          mmx argv 构造（纯函数）与子进程执行（无重试）
 src/generate.ts     生成编排与历史归档（runId 目录 + run.json 清单 + readImage allowlist）
 src/remote-handlers.ts  业务处理器（Remote 与 Agent tool 共用，防漂移）
 src/remote.ts      Typert Remote 契约（codegen 单一来源，标准装饰器）
-src/client/index.tsx 浏览器半边入口（tab 类型 + pane / hero.options 槽位注册 + $mount）
+src/client/index.tsx 浏览器半边入口（tab 类型 + guide 清单条目 + pane 槽位注册 + $mount）
 src/client/App.tsx   面板本体（表单 / 画廊 / 对比浮层 / 历史视图）
 src/client/api.ts    Remote 信封解包（{ok,value} → 裸值，!ok 抛错）
 src/client/state.ts  极小 observable store + useSyncExternalStore

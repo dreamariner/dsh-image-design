@@ -7,7 +7,7 @@
 // ⚠ 运行期命名空间返回的是信封（{ok, value, error}），不是裸值：直接把返回值当
 //   数据用会在渲染时炸（例如把 {ok,value} 当数组 .map）。全部经 unwrap 走。
 
-import type { GenerateWireArgs, ImageModel, RunImage, RunRecord, RunSummary, RunUsage } from '@dreamariner/dsh-image-design/types'
+import type { GenerateWireArgs, ImageModel, RefShotInput, RefShotRecord, RefSummary, RunImage, RunRecord, RunSummary, RunUsage } from '@dreamariner/dsh-image-design/types'
 
 export type ModelKey = ImageModel
 export type RunView = RunRecord
@@ -16,6 +16,10 @@ export type RunUsageView = RunUsage
 export type RunSummaryView = RunSummary
 export type RunStatus = RunView['status']
 export type { GenerateWireArgs }
+// 素体参考图的 wire 面（与 host 的 remote.ts 签名共用 contract 单源）
+export type RefShotInputView = RefShotInput
+export type RefSummaryView = RefSummary
+export type RefView = RefShotRecord
 
 export interface ImageDesignApi {
   ping(): Promise<{ pong: true; outDir: string; defaultModel: ModelKey }>
@@ -24,6 +28,12 @@ export interface ImageDesignApi {
   readRun(id: string): Promise<RunView>
   readImage(id: string, file: string): Promise<{ bytes: Uint8Array; mime: string }>
   deleteRun(id: string): Promise<void>
+  // ── 素体参考图存档 ────────────────────────────────────────────────────
+  saveRefShot(args: RefShotInputView): Promise<{ refId: string; file: string; absPath: string }>
+  listRefs(): Promise<RefSummaryView[]>
+  readRefImage(refId: string, file: string): Promise<{ bytes: Uint8Array; mime: string }>
+  readRefRecord(refId: string): Promise<RefView>
+  deleteRef(refId: string): Promise<void>
 }
 
 /** Remote 信封：ok 取 value，!ok 抛错。 */
@@ -51,6 +61,16 @@ export function createImageDesignApi(ns: unknown): ImageDesignApi {
     },
     deleteRun: async (id) => {
       await unwrap(m.deleteRun({ id }))
+    },
+    saveRefShot: (args) => unwrap(m.saveRefShot(args)),
+    listRefs: () => unwrap(m.listRefs({})),
+    readRefImage: async (refId, file) => {
+      const v = await unwrap<{ base64: string; mime: string }>(m.readRefImage({ refId, file }))
+      return { bytes: base64ToBytes(v.base64), mime: v.mime }
+    },
+    readRefRecord: (refId) => unwrap(m.readRefRecord({ refId })),
+    deleteRef: async (refId) => {
+      await unwrap(m.deleteRef({ refId }))
     },
   }
 }

@@ -73,27 +73,29 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/schemastery": ">=3.19.0 <4.0.0-0",
-    "@deepseek-ai/dsh-typert-protocol": ">=0.2.2-rc.2 <0.3.0-0"
+    "@deepseek-ai/dsh-typert-protocol": ">=0.2.2-rc.2 <0.3.0-0",
+    "@deepseek-ai/schemastery": ">=3.19.0 <4.0.0-0"
   },
   "dependencies": {
     "clsx": "^2.1.1",
+    "three": "^0.170.0",
     "zod": "^4.6.6"
   },
   "devDependencies": {
-    "@types/node": "^24",
-    "js-yaml": "^4.1.0",
-    "tsdown": "^0.22.2",
-    "typescript": "^5.9",
-    "vitest": "^5.0.3",
     "@deepseek-ai/cordis": "4.1.0",
-    "@deepseek-ai/schemastery": "3.19.0",
+    "@deepseek-ai/dsh-api-remotes": "0.2.2-rc.2",
     "@deepseek-ai/dsh-typert-generator": "0.2.2-rc.2",
     "@deepseek-ai/dsh-typert-protocol": "0.2.2-rc.2",
-    "react": "^18.2.0",
+    "@deepseek-ai/schemastery": "3.19.0",
+    "@types/node": "^24",
     "@types/react": "^18.2.0",
-    "react-dom": "^18.2.0",
     "@types/react-dom": "^18.2.0",
-    "@deepseek-ai/dsh-api-remotes": "0.2.2-rc.2"
+    "@types/three": "^0.170.0",
+    "js-yaml": "^4.1.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tsdown": "^0.22.2",
+    "typescript": "^5.9",
+    "vitest": "^5.0.3"
   }
 }

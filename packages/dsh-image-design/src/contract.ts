@@ -116,3 +116,47 @@ export interface GenerateWireArgs {
   subjectRefImage?: string
   refImages?: string[]
 }
+
+// ── 素体参考图（refs/<refId>/ 存档的 wire 面）────────────────────────────
+
+/** 素体体型参数快照（无单位约束，值域由 client 滑杆保证，存档原样保存）。 */
+export interface BodyParamsSnapshot {
+  [key: string]: number
+}
+
+/** 拍摄时钉死的相机参数快照。 */
+export interface CameraSnapshot {
+  [key: string]: string | number
+}
+
+/** 参考图清单（ref.json 内容，也是 readRefRecord 的 wire 返回形状）。 */
+export interface RefShotRecord {
+  id: string
+  createdAt: string
+  body: BodyParamsSnapshot
+  /** 姿势库条目 id（unknown = 手调关节非库内姿势）。 */
+  poseId: string
+  /** 拍摄时的完整关节旋转表（弧度），姿势库演进也不影响旧档复现。 */
+  joints: Record<string, { x: number; y: number; z: number }>
+  camera: CameraSnapshot
+  images: Array<{ file: string }>
+  note?: string
+}
+
+/** 参考图历史列表项（瘦身版）。 */
+export interface RefSummary {
+  id: string
+  createdAt: string
+  poseId: string
+  file: string
+}
+
+/** 拍摄入参（wire 面；dataUrl 严格校验在宿主侧）。 */
+export interface RefShotInput {
+  dataUrl: string
+  body: BodyParamsSnapshot
+  poseId: string
+  joints: Record<string, { x: number; y: number; z: number }>
+  camera: CameraSnapshot
+  note?: string
+}

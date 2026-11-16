@@ -5,9 +5,12 @@
 // 历史经 Remote 随取随回。
 
 import { useSyncExternalStore } from 'react'
-import type { RunSummaryView, RunView } from './api.ts'
+import type { RefSummaryView, RunSummaryView, RunView } from './api.ts'
+import type { BodyParams } from './mannequin/body.ts'
+import type { AzimuthKind, ElevationKind, OrbitState, ShotKind } from './mannequin/camera.ts'
+import type { CaptureLength, CaptureRatio } from './mannequin/capture.ts'
 
-export type PanelTab = 'generate' | 'history'
+export type PanelTab = 'generate' | 'mannequin' | 'history'
 
 /** 表单态（字符串留给输入框的自由度，发送时才转数值并校验）。 */
 export interface FormState {
@@ -40,6 +43,26 @@ export interface LightboxState {
   alt: string
 }
 
+/** 素体视图状态（体型 / 姿势 / 相机 / 拍摄档位 / 参考图列表）。 */
+export interface MannequinState {
+  body: BodyParams
+  poseId: string
+  shot: ShotKind
+  orbit: OrbitState
+  /** 预设方位 / 俯仰（segmented 的值；拖拽会改 orbit 但保留最近预设选择）。 */
+  azimuth: AzimuthKind
+  elevation: ElevationKind
+  length: CaptureLength
+  ratio: CaptureRatio
+  capturing: boolean
+  refs: RefSummaryView[]
+  refsLoading: boolean
+  /** `${refId}/${file}` → blob URL。 */
+  refUrls: Record<string, string>
+  /** refId → 落盘绝对路径（拍摄时 saveRefShot 返回，给「用作生成参考图」用）。 */
+  refAbsPaths: Record<string, string>
+}
+
 export interface ClientState {
   tab: PanelTab
   form: FormState
@@ -63,6 +86,8 @@ export interface ClientState {
   historyLoading: boolean
   /** 秒级心跳（busy 时驱动耗时显示）。 */
   now: number
+  /** 素体视图切片。 */
+  man: MannequinState
 }
 
 export function initialForm(): FormState {
@@ -101,6 +126,21 @@ function initialState(): ClientState {
     lightbox: null,
     historyLoading: false,
     now: Date.now(),
+    man: {
+      body: { height: 170, headRatio: 7.5, shoulderWidth: 1, bust: 1, waist: 1, hip: 1, limbThickness: 1, armLength: 1, legLength: 1 },
+      poseId: 'a-pose',
+      shot: 'full',
+      orbit: { azimuthDeg: 0, elevationDeg: 0, distanceScale: 1 },
+      azimuth: 'front',
+      elevation: 'level',
+      length: 1024,
+      ratio: '2:3',
+      capturing: false,
+      refs: [],
+      refsLoading: false,
+      refUrls: {},
+      refAbsPaths: {},
+    },
   }
 }
 
@@ -118,6 +158,11 @@ export function setState(patch: Partial<ClientState>): void {
 
 export function patchForm(patch: Partial<FormState>): void {
   setState({ form: { ...getState().form, ...patch } })
+}
+
+/** 素体切片的定向更新（浅合并）。 */
+export function patchMan(patch: Partial<MannequinState>): void {
+  setState({ man: { ...getState().man, ...patch } })
 }
 
 export function subscribe(l: () => void): () => void {

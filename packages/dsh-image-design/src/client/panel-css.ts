@@ -23,6 +23,7 @@ import { styles as imageLightboxStyles } from './ui/image-lightbox-css.ts'
 import { styles as fieldStyles } from './ui/field-css.ts'
 import { styles as labelStyles } from './ui/label-css.ts'
 import { styles as separatorStyles } from './ui/separator-css.ts'
+import { styles as sliderStyles } from './ui/slider-css.ts'
 
 export const PANEL_CSS = `
 .idi-root { position: relative; display: flex; flex-direction: column;
@@ -101,13 +102,39 @@ export const PANEL_CSS = `
 
 .idi-reflist { display: flex; flex-direction: column; gap: 6px; }
 .idi-refrow { display: flex; gap: 6px; align-items: center; min-width: 0; }
+
+/* ── 素体视图 ──────────────────────────────────────────────────────────── */
+.idi-man-root { flex: 1; min-height: 0; display: flex; flex-direction: column;
+  gap: 10px; padding: 10px 12px 16px; }
+.idi-man-viewport { flex: none; height: min(300px, 42vh); position: relative;
+  border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-md);
+  overflow: hidden; background: var(--dsw-alias-bg-base); touch-action: none;
+  cursor: grab; }
+.idi-man-viewport:active { cursor: grabbing; }
+.idi-man-viewport canvas { display: block; outline: none; }
+.idi-man-params { flex: 1; min-height: 0; overflow-y: auto; display: flex;
+  flex-direction: column; gap: 10px; }
+.idi-slider-row { display: flex; align-items: center; gap: 6px; }
+.idi-slider-label { flex: none; width: 58px; font-size: 11px; line-height: 16px;
+  color: var(--dsw-alias-label-secondary); }
+.idi-slider-val { flex: none; min-width: 48px; text-align: right; font-size: 11px;
+  line-height: 16px; color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums; }
+.idi-ref-row { display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+  border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-base); min-width: 0; }
+.idi-ref-thumb { width: 44px; height: 44px; flex: none; object-fit: cover;
+  border-radius: var(--dsw-radius-sm); border: 0.5px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1); }
+.idi-ref-meta { flex: 1; min-width: 0; display: flex; flex-direction: column;
+  gap: 2px; overflow: hidden; }
 `
 
 const CELL_STYLES = [
   buttonStyles, inputStyles, textareaStyles, selectStyles, segmentedControlStyles,
   switchStyles, tagStyles, shortcutKeysStyles, tooltipStyles, spinnerStyles,
   emptyStyles, imagePreviewStyles, imageLightboxStyles, fieldStyles, labelStyles,
-  separatorStyles,
+  separatorStyles, sliderStyles,
 ]
 
 export function injectPanelStyles(): () => void {

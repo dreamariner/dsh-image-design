@@ -4,7 +4,7 @@
 
 ## 项目定位
 
-@dreamariner/dsh-image-design：**图片设计**，用 MiniMax 图片模型（image-01 / MiniMax-H3-Image）生成图片的 DSH 插件，能力对齐 mmx CLI 的 `image generate`。host 半边经 mmx 子进程生成并落盘归档；client 半边提供参数设置、结果画廊与对比、历史回看。由 create-dsh-plugin 生成，形态：**host + client 双端**。
+@dreamariner/dsh-image-design：**图片设计**，用 MiniMax 图片模型（image-01 / MiniMax-H3-Image）生成图片的 DSH 插件，能力对齐 mmx CLI 的 `image generate`；另带**素体设计**（three.js 参数化 3D 人物素体，调体型 / 姿势 / 机位拍参考图，一键进 H3 参考图闭环）。host 半边经 mmx 子进程生成并落盘归档；client 半边提供参数设置、结果画廊与对比、历史回看。由 create-dsh-plugin 生成，形态：**host + client 双端**。
 
 ## 文档机制
 
@@ -40,6 +40,13 @@
 2. **读图链路**（client 展示）：face `readImage(runId, file)` 只认该轮 `run.json`
    `images[].file` allowlist（防路径越界）→ base64 → client 转 blob URL（`urls` 缓存）。
 3. **历史链路**：`listRuns` 只认有 `run.json` 的目录；删除 = 移除整个运行目录。
+4. **素体参考图链路**（issue 003）：client `mannequin/`（body.ts 体型→几何，三围 girth≈2πr
+   映射 LatheGeometry 轮廓；poses.ts 8 姿势 = 关节欧拉角表；camera.ts 景别×方位×俯仰预设；
+   capture.ts 影棚 + 离屏导出；viewer.ts 场景装配 + 轨道交互）→ wire `saveRefShot`
+   （dataUrl 严格校验）→ `src/mannequin-handlers.ts` 落盘 `<outDir>/refs/<refId>/`
+   （ref_001.png + ref.json 钉死体型/关节表/相机）；读图 `readRefImage` 只认该参考图
+   清单 allowlist。拍摄响应带 absPath，client 缓存进 `man.refAbsPaths`，「用作参考图」
+   把 absPath 追加进生成表单的 H3 refImages 并切回生成视图。
 
 计费红线（mmx-h3-image skill 实证）：接口非幂等，无任何自动重试；客户端超时 ≥ 600 秒；
 `signal` 只拦「尚未发出」段，已发出的生成不响应取消，结果照常进历史。

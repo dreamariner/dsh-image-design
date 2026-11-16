@@ -21,6 +21,7 @@ import { Separator } from './ui/separator.tsx'
 import { IconCloseOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconWarningOutlineRegular } from './ui/icons.tsx'
 import type { GenerateWireArgs, ImageDesignApi, ModelKey, RunStatus, RunView } from './api.ts'
 import { getState, patchForm, setState, useClientState, type FormState } from './state.ts'
+import { MannequinView } from './MannequinView.tsx'
 
 const IMAGE_KEY = (runId: string, file: string): string => `${runId}/${file}`
 
@@ -137,6 +138,7 @@ export function ImageDesignPanel({ api }: { api: ImageDesignApi }): ReactNode {
           value={s.tab}
           options={[
             { value: 'generate', label: '生成' },
+            { value: 'mannequin', label: '素体' },
             { value: 'history', label: '历史' },
           ]}
           onChange={(v) => { setState({ tab: v }); }}
@@ -161,7 +163,9 @@ export function ImageDesignPanel({ api }: { api: ImageDesignApi }): ReactNode {
       )}
       {s.tab === 'generate'
         ? <GenerateView api={api} onGenerate={() => { void doGenerate() }} />
-        : <HistoryView api={api} />}
+        : s.tab === 'mannequin'
+          ? <MannequinView api={api} />
+          : <HistoryView api={api} />}
       {s.lightbox !== null && (
         <ImageLightbox
           src={s.lightbox.url}

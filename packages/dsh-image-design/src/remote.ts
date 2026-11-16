@@ -19,7 +19,8 @@
 
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { createImageDesignHandlers, type ImageDesignDeps, type ImageDesignHandlers } from './remote-handlers.ts'
-import type { GenerateWireArgs, ImageModel, RunRecord, RunSummary } from './contract.ts'
+import { createMannequinHandlers, type MannequinHandlers } from './mannequin-handlers.ts'
+import type { GenerateWireArgs, ImageModel, RefShotInput, RefShotRecord, RefSummary, RunRecord, RunSummary } from './contract.ts'
 
 // 服务契约的 Context 增强：client 与宿主侧都能类型化地访问 ctx.remote.<key>。
 declare module '@deepseek-ai/cordis' {
@@ -39,8 +40,11 @@ export class ImageDesignRemote extends TypertRemoteService {
       throw new Error('[dsh-image-design] ImageDesignRemote 缺 deps：插件 apply 未注入（mmx / 输出目录配置）')
     }
     this.handlers = createImageDesignHandlers(deps)
-    deps.log(`Remote 已注册：service=imageDesign（generate/listRuns/readRun/readImage/deleteRun/ping）`)
+    this.mannequin = createMannequinHandlers(deps)
+    deps.log(`Remote 已注册：service=imageDesign（generate/listRuns/readRun/readImage/deleteRun/ping + refShot 存档 4 方法）`)
   }
+
+  private readonly mannequin: MannequinHandlers
 
   /** 探活：回显输出目录与默认模型，client 用它做连通性检查。 */
   @Remote('ping')
@@ -85,5 +89,42 @@ export class ImageDesignRemote extends TypertRemoteService {
   deleteRun(args: { id: string }, signal: AbortSignal): Promise<{ ok: true }> {
     signal.throwIfAborted()
     return this.handlers.deleteRun(args)
+  }
+
+  // ── 素体参考图存档（refs/<refId>/）────────────────────────────────────
+
+  /** 保存一张素体拍摄参考图（PNG dataUrl → 落盘 + 清单钉死参数）。返回 absPath 供生成表单的 refImages 直接使用。 */
+  @Remote('saveRefShot')
+  saveRefShot(args: RefShotInput, signal: AbortSignal): Promise<{ refId: string; file: string; absPath: string }> {
+    signal.throwIfAborted()
+    return this.mannequin.saveRefShot(args)
+  }
+
+  /** 参考图历史列表（创建时间倒序）。 */
+  @Remote('listRefs')
+  listRefs(args: Record<string, never>, signal: AbortSignal): Promise<RefSummary[]> {
+    signal.throwIfAborted()
+    return this.mannequin.listRefs()
+  }
+
+  /** 读参考图 PNG 的 base64（file 必须在该参考图清单里，防路径越界）。 */
+  @Remote('readRefImage')
+  readRefImage(args: { refId: string; file: string }, signal: AbortSignal): Promise<{ base64: string; mime: string }> {
+    signal.throwIfAborted()
+    return this.mannequin.readRefImage(args)
+  }
+
+  /** 读参考图的完整清单（体型/姿势关节表/相机，用于历史回看与复现）。 */
+  @Remote('readRefRecord')
+  readRefRecord(args: { refId: string }, signal: AbortSignal): Promise<RefShotRecord> {
+    signal.throwIfAborted()
+    return this.mannequin.readRefRecord(args)
+  }
+
+  /** 删除一张参考图（目录整体移除）。 */
+  @Remote('deleteRef')
+  deleteRef(args: { refId: string }, signal: AbortSignal): Promise<{ ok: true }> {
+    signal.throwIfAborted()
+    return this.mannequin.deleteRef(args)
   }
 }

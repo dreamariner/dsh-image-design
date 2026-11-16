@@ -40,7 +40,7 @@ profile `package.json` 的 `dsh.profile.bundles`（DSH 只认这份名单，裸 
 
 ## 功能与使用
 
-- **入口**：右栏「新标签页」首页的工具清单（指南页）里的「图片设计」条目，点条目即打开右栏 tab；面板分「生成 / 历史」两视图。
+- **入口**：右栏「新标签页」首页的工具清单（指南页）里的「图片设计」条目，点条目即打开右栏 tab；面板分「生成 / 历史」两视图。条目图标是自绘的 inline SVG（`src/client/ImageDesignIcon.tsx`），不是包内 `icon.svg`（那份只给 Plugin Manager / Settings 的插件展示用）。
 - **生成**：模型（image-01 / H3-Image）、比例档（W:H）+ 面积档（1K/2K/4K，H3）、精确尺寸（H3，WxH）、
   像素宽高（image-01，512..2048 的 8 倍数）、张数（1..10）、seed / 提示词优化 / AIGC 水印（image-01）、
   提示词增强（H3，默认开）、主体参考（image-01，type=character）、参考图 1..16 张（H3，自动走编辑接口）。

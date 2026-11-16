@@ -23,6 +23,7 @@ import { TYPERT_REMOTE } from '@dreamariner/dsh-image-design/remote'
 import { injectPanelStyles } from './panel-css.ts'
 import { createImageDesignApi, type ImageDesignApi } from './api.ts'
 import { ImageDesignPanel } from './App.tsx'
+import { ImageDesignIcon } from './ImageDesignIcon.tsx'
 
 export const inject = ['slots', 'sidebarRightTabs', 'sidebarRight', 'remote']
 
@@ -58,6 +59,8 @@ interface SidebarRightTabsService {
       order: number
       title: () => string
       description?: () => string
+      /** 条目图标：宿主渲染的组件（传 size / className）；不给则画立方体占位 */
+      icon?: (props: { size?: number; className?: string }) => React.ReactElement
     }[]
   }): void
 }
@@ -116,6 +119,7 @@ export function apply(rawCtx: unknown): void {
         order: 100,
         title: () => '图片设计',
         description: () => '用图片模型生成图片：参数设置、结果画廊与对比、历史回看',
+        icon: ImageDesignIcon,
       }],
     }), `${PLUGIN}: tab type`)
 

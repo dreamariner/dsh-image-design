@@ -1,6 +1,7 @@
-// 素体视口：Xbot 蒙皮人偶（GLB 内联）装配 + 交互轨道 + 参数热更新 + 拍摄导出。
+// 素体视口：真人素体（MakeHuman 基础网格 + 自建骨架的蒙皮人偶，GLB 内联）
+// + 交互轨道 + 体型形变 + 姿势应用 + 拍摄导出。
 //
-// 生命周期：createViewer（挂载）→ ready（GLB 解码 + 骨架绑定）→
+// 生命周期：createViewer（挂载）→ ready（GLB 解码 + 骨架绑定 + 形变上下文）→
 // setBody / setPose / setCamera（状态驱动）→ dispose（卸载）。
 // ready 前的 setBody / setPose 调用缓存，加载完成后统一生效。
 // 渲染按需（dirty 标记 + rAF），不做持续重绘。
@@ -11,8 +12,9 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { MANNEQUIN_GLB_BASE64 } from '../generated/mannequin-glb.ts'
-import { boneTunes, BONE, type BodyParams } from './body.ts'
+import { BONE, lengthTunes, positionTunes, type BodyParams } from './body.ts'
 import { bindRig, applyRigPose, type RigBinding } from './rig.ts'
+import { applyShape, type ShapeContext } from './shape.ts'
 import { buildStudio } from './capture.ts'
 import { computeCameraPose, type OrbitState, type ShotKind } from './camera.ts'
 import { poseJoints, type JointRotations } from './poses.ts'
@@ -35,8 +37,11 @@ export interface ViewerCallbacks {
   onOrbit?: (orbit: OrbitState) => void
 }
 
-/** 素体陶土色（与旧程序化版一致，语义=无服装无特征的裸体素体）。 */
+/** 素体陶土色（素体语义：裸体、无服装无特征的灰模）。 */
 const CLAY = 0xb9bdc6
+
+/** 脚掌离脚趾骨的厚度（m）：脚底贴地时用它把模型垫到地面。 */
+const SOLE_DROP = 0.035
 
 /** glb base64 → 字节（浏览器全局 atob）。 */
 function glbBytes(): ArrayBuffer {
@@ -82,33 +87,50 @@ export function createViewer(
   let model: THREE.Group | null = null
   let holder: THREE.Group | null = null
   let binding: RigBinding | null = null
-  let baseHeightM = 1.8
+  let skinMesh: THREE.SkinnedMesh | null = null
+  let shapeCtx: ShapeContext | null = null
+  let baseHeightM = 1.68
   let currentBody: BodyParams = { ...bodyParams }
   let currentPose: JointRotations = {}
 
-  const applyBodyTunes = (): void => {
-    if (model === null || holder === null) return
-    holder.scale.setScalar((currentBody.height / 100) / baseHeightM)
-    // ⚠ glTF 节点默认 matrixAutoUpdate = false：改 scale 不重算 matrix 就不会生效
-    holder.matrixAutoUpdate = true
-    holder.updateMatrix()
-    const byName = new Map<string, THREE.Object3D>()
-    model.traverse((obj) => { if (obj.name !== '') byName.set(obj.name.replace(/:/g, ''), obj) })
-    for (const tune of boneTunes(currentBody)) {
-      const bone = byName.get(tune.bone)
-      if (bone === undefined) continue
-      bone.matrixAutoUpdate = true
-      if (tune.scale !== undefined) bone.scale.set(...tune.scale)
-      if (tune.position !== undefined) {
-        bone.userData.restX ??= bone.position.x
-        bone.userData.restY ??= bone.position.y
-        bone.userData.restZ ??= bone.position.z
-        bone.position.x = (bone.userData.restX as number) + tune.position[0]
-        bone.position.y = (bone.userData.restY as number) + tune.position[1]
-        bone.position.z = (bone.userData.restZ as number) + tune.position[2]
-      }
+  /** 体型落地：网格形变（围度）+ 骨链长度（臂长腿长）+ 落地与整体缩放。 */
+  const applyBody = (): void => {
+    if (model === null || holder === null || binding === null || skinMesh === null || shapeCtx === null) return
+    // 1) 围度类：绑定姿态网格形变（蒙皮权重混合，接缝自然）
+    applyShape(skinMesh.geometry, shapeCtx, currentBody)
+    skinMesh.geometry.computeBoundingSphere()
+    // 2) 肩宽：上臂关节横向外移（手臂整条跟着外移）
+    for (const [boneName, delta] of Object.entries(positionTunes(currentBody))) {
+      const bone = binding.byName.get(boneName)
+      const rest = binding.boneRestLocal.get(boneName)
+      if (bone === undefined || rest === undefined) continue
+      bone.position.set(rest.x + delta[0], rest.y + delta[1], rest.z + delta[2])
       bone.updateMatrix()
     }
+    // 3) 臂长 / 腿长：缩放子骨的局部位移（关节跟着走，长度真的变）
+    for (const [boneName, k] of Object.entries(lengthTunes(currentBody))) {
+      const bone = binding.byName.get(boneName)
+      const rest = binding.boneRestLocal.get(boneName)
+      if (bone === undefined || rest === undefined) continue
+      if (rest.lengthSq() < 1e-10) continue
+      bone.position.copy(rest).multiplyScalar(k)
+      bone.updateMatrix()
+    }
+    binding.bones.forEach((bone) => { bone.updateWorldMatrix(true, false) })
+    // 4) 落地 + 整体缩放到目标身高（先在单位缩放下量）
+    holder.scale.setScalar(1)
+    holder.position.set(0, 0, 0)
+    binding.bones.forEach((bone) => { bone.updateWorldMatrix(true, false) })
+    const toe = binding.byName.get(BONE.footL.replace('Foot', 'ToeBase'))
+    const headTop = binding.byName.get('mixamorigHeadTop')
+    const footY = toe !== undefined ? toe.getWorldPosition(new THREE.Vector3()).y - SOLE_DROP : 0
+    const headY = headTop !== undefined ? headTop.getWorldPosition(new THREE.Vector3()).y : baseHeightM
+    const localHeight = Math.max(0.5, headY - footY)
+    const scale = (currentBody.height / 100) / localHeight
+    holder.scale.setScalar(scale)
+    holder.position.y = -scale * footY
+    holder.updateMatrixWorld(true)
+    baseHeightM = currentBody.height / 100
     dirty = true
   }
 
@@ -125,18 +147,20 @@ export function createViewer(
       try {
         model = gltf.scene
         model.updateMatrixWorld(true)
-        // ⚠ 不解挂网格、不改 scale：Mixamo 的网格几何是米级、骨架是厘米级，
-        //   靠 Armature 的 0.01 与 skin 的 inverseBindMatrices（厘米空间）配对，
-        //   蒙皮时自动抵消。任何「给网格补 scale / 换父节点」的操作都会破坏配对
-        //   （2026-11-17 实测事故）。
+        // ⚠ 不解挂网格、不改 scale：网格与骨架在 glTF 里是同一空间，装配关系
+        //   （蒙皮 inverseBindMatrices）靠这个配对，改层级会破坏蒙皮。
         holder = new THREE.Group()
         holder.name = 'mannequin-holder'
         scene.add(holder)
         holder.add(model)
         holder.updateMatrixWorld(true)
+        // 找到蒙皮网格
         const meshes: THREE.Object3D[] = []
         model.traverse((o) => { if ((o as THREE.Mesh).isMesh === true) meshes.push(o) })
-        // 素体材质：去掉原模型贴图（带服装色块），统一陶土色（素体语义）
+        const skinned = meshes.find((m) => (m as THREE.SkinnedMesh).isSkinnedMesh === true)
+        if (skinned === undefined) throw new Error('模型里没有蒙皮网格')
+        skinMesh = skinned as THREE.SkinnedMesh
+        // 素体材质：统一陶土色（去掉可能的贴图）
         for (const m of meshes) {
           const mesh = m as THREE.Mesh
           const mat = mesh.material as THREE.Material | THREE.Material[] | undefined
@@ -151,20 +175,29 @@ export function createViewer(
             std.needsUpdate = true
           }
         }
-        // 身高基准：用骨架地标（骨骼在 Armature 0.01 下已是米级）；
-        // 网格的 CPU 侧坐标是未蒙皮的 bind 姿态，量不出真实身高。
-        const headBone = model.getObjectByName('mixamorigHead')
-        const footBone = model.getObjectByName('mixamorigLeftFoot')
-        if (headBone !== undefined && footBone !== undefined) {
-          const hy = headBone.getWorldPosition(new THREE.Vector3()).y
-          const fy = footBone.getWorldPosition(new THREE.Vector3()).y
-          baseHeightM = Math.max(0.5, (hy - fy) * 1.14 + 0.06)
-        } else {
-          const box = new THREE.Box3().setFromObject(holder)
-          baseHeightM = Math.max(0.5, box.max.y - box.min.y)
-        }
         binding = bindRig(model)
-        applyBodyTunes()
+
+        // 形变上下文：绑定姿态顶点 + 蒙皮权重 + 骨心 / 骨轴
+        const geom = skinMesh.geometry
+        const posAttr = geom.getAttribute('position') as THREE.BufferAttribute
+        const skinIndex = geom.getAttribute('skinIndex') as THREE.BufferAttribute
+        const skinWeight = geom.getAttribute('skinWeight') as THREE.BufferAttribute
+        if (skinIndex === undefined || skinWeight === undefined) {
+          throw new Error('模型缺少蒙皮权重属性')
+        }
+        const boneIndex = new Map<string, number>()
+        skinMesh.skeleton.bones.forEach((b, i) => { boneIndex.set(b.name.replace(/:/g, ''), i) })
+        shapeCtx = {
+          base: new Float32Array(posAttr.array as Float32Array),
+          joints: new Uint16Array(skinIndex.array as Uint16Array),
+          weights: new Float32Array(skinWeight.array as Float32Array),
+          boneIndex,
+          boneWorld: binding.boneRest,
+          boneAxis: binding.boneAxis,
+          chestBone: BONE.spine2,
+        }
+
+        applyBody()
         applyPose(currentPose)
         // 调试出口（实机排查骨架/蒙皮用；只读引用，无副作用）
         ;(window as unknown as Record<string, unknown>).__mannequinDebug = { model, binding, camera, scene, holder }
@@ -258,7 +291,7 @@ export function createViewer(
     ready,
     setBody(params: BodyParams): void {
       currentBody = { ...params }
-      applyBodyTunes()
+      applyBody()
     },
     setPose(joints: JointRotations): void {
       applyPose(joints)
@@ -308,6 +341,8 @@ export function createViewer(
         scene.remove(model)
         model = null
         binding = null
+        skinMesh = null
+        shapeCtx = null
       }
       // 调试出口随卸载一起清掉，避免全局引用挂着已释放的模型
       delete (window as unknown as Record<string, unknown>).__mannequinDebug

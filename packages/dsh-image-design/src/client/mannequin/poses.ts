@@ -1,10 +1,13 @@
 // 素体姿势库：每姿势 = 全关节欧拉表（弧度）。
 //
-// 旋转约定（模型面向 +z，相机默认在 +z 看正面）：
-//   · 向下的肢体（臂 / 腿）：x 正 = 向后摆，x 负 = 向前抬；z 正 = 向模型左侧（+x）展开
-//   · 肘 / 膝：x 负 = 前屈（弯向前），x 正 = 后弯（膝反向自然弯）
-//   · spine / chest / neck：x 正 = 低头 / 弓背，y = 转体
+// 骨架是自建的（局部旋转全是单位阵 → 骨的朝向就是世界朝向），所以姿势欧拉按
+// **世界轴**书写，语义与 rig.ts 顶部的约定一致：
+//   · x：绕世界 X 轴。躯干 x > 0 = 前倾；四肢 x > 0 = 向后摆、x < 0 = 向前抬；
+//     肘 / 膝 x > 0 = 后屈（肘向后、膝向后，符合人体关节方向）。
+//   · y：绕世界 Y 轴 = 水平扭转。
+//   · z：绕世界 Z 轴 = 侧向（角色左 = +x，左侧 +z 为向外抬起）。
 //
+// 绑定姿态就是 A-pose（手臂自然下垂约 40°），所以 a-pose = 全零表。
 // 每姿势存**全关节表**（缺省关节 = 零旋转）：拍参考图时整表钉进 ref.json，
 // 姿势库后续增删改不影响旧参考图的可复现性。
 
@@ -36,78 +39,84 @@ export function normalizePose(partial: JointRotations): JointRotations {
   return t
 }
 
-const mirror = (t: JointRotations): JointRotations => {
-  const m = zero()
-  for (const j of JOINT_NAMES) {
-    const src = partialByName(j, t)
-    if (src === undefined) continue
-    // 左右镜像：x 反号（前后摆反向），y/z 反号（左右展开反向）
-    m[j] = { x: -src.x, y: -src.y, z: -src.z }
-  }
-  return m
-}
-
-function partialByName(j: JointName, t: JointRotations): { x: number; y: number; z: number } | undefined {
-  const flipped = j.endsWith('L') ? `${j.slice(0, -1)}R` : j.endsWith('R') ? `${j.slice(0, -1)}L` : undefined
-  return t[j] ?? (flipped !== undefined ? t[flipped] : undefined)
+/** 取姿势的规范化全关节表（姿势存在取库值；否则按 unknown 处理零表）。 */
+export function poseJoints(id: string): JointRotations {
+  const pose = POSES.find((p) => p.id === id)
+  return pose !== undefined ? normalizePose(pose.joints) : zero()
 }
 
 const POSE_LIST: PoseDef[] = [
-  { id: 't-pose', title: 'T-pose（基准）', joints: { ...zero(), shoulderL: { x: 0, y: 0, z: Math.PI / 2 }, shoulderR: { x: 0, y: 0, z: -Math.PI / 2 } } },
   {
     id: 'a-pose', title: 'A-pose（自然下垂基准）',
-    joints: { ...zero(), shoulderL: { x: 0, y: 0.06, z: 0.55 }, shoulderR: { x: 0, y: -0.06, z: -0.55 }, elbowL: { x: -0.1, y: 0, z: 0.08 }, elbowR: { x: -0.1, y: 0, z: -0.08 } },
+    joints: { ...zero() },
   },
-  { id: 'stand', title: '自然站立', joints: mirror({ ...zero(), shoulderL: { x: 0.05, y: 0.06, z: 0.14 }, elbowL: { x: -0.18, y: 0, z: 0.05 } }) },
+  {
+    id: 't-pose', title: 'T-pose（双臂水平）',
+    joints: {
+      ...zero(),
+      shoulderL: { x: 0, y: 0, z: 0.88 }, shoulderR: { x: 0, y: 0, z: -0.88 },
+      elbowL: { x: 0, y: 0, z: -0.16 }, elbowR: { x: 0, y: 0, z: 0.16 },
+    },
+  },
+  {
+    id: 'stand', title: '自然站立',
+    joints: {
+      ...zero(),
+      shoulderL: { x: 0.02, y: 0.04, z: -0.1 }, shoulderR: { x: 0.02, y: -0.04, z: 0.1 },
+      elbowL: { x: -0.12, y: 0, z: 0.06 }, elbowR: { x: -0.12, y: 0, z: -0.06 },
+      hipL: { x: 0.02, y: 0.02, z: 0.02 }, hipR: { x: -0.02, y: -0.02, z: -0.02 },
+    },
+  },
   {
     id: 'hands-on-hips', title: '叉腰',
     joints: {
       ...zero(),
-      shoulderL: { x: 0.1, y: -0.55, z: 0.55 }, elbowL: { x: -1.15, y: 0.25, z: -0.25 }, wristL: { x: -0.3, y: 0, z: 0.2 },
-      shoulderR: { x: 0.1, y: 0.55, z: -0.55 }, elbowR: { x: -1.15, y: -0.25, z: 0.25 }, wristR: { x: -0.3, y: 0, z: -0.2 },
-      spine: { x: 0.03, y: 0, z: 0 },
+      shoulderL: { x: 0.12, y: -0.1, z: -0.18 }, shoulderR: { x: 0.12, y: 0.1, z: 0.18 },
+      elbowL: { x: 1.0, y: 0, z: -1.5 }, elbowR: { x: 1.0, y: 0, z: 1.5 },
+      wristL: { x: 0, y: 0, z: -0.3 }, wristR: { x: 0, y: 0, z: 0.3 },
+      spine: { x: -0.02, y: 0, z: 0 },
     },
   },
   {
     id: 'walk', title: '行走',
     joints: {
       ...zero(),
-      hipL: { x: -0.42, y: 0, z: 0.03 }, kneeL: { x: 0.25, y: 0, z: 0 }, ankleL: { x: 0.15, y: 0, z: 0 },
-      hipR: { x: 0.38, y: 0, z: 0.03 }, kneeR: { x: 0.5, y: 0, z: 0 }, ankleR: { x: -0.2, y: 0, z: 0 },
-      shoulderL: { x: 0.45, y: 0.06, z: 0.1 }, elbowL: { x: -0.35, y: 0, z: 0.05 },
-      shoulderR: { x: -0.5, y: -0.06, z: -0.1 }, elbowR: { x: -0.6, y: 0, z: -0.05 },
-      spine: { x: 0.04, y: 0, z: 0 },
+      hipL: { x: -0.42, y: 0.04, z: 0.03 }, kneeL: { x: 0.3, y: 0, z: 0 }, ankleL: { x: 0.12, y: 0, z: 0 },
+      hipR: { x: 0.38, y: -0.04, z: 0.03 }, kneeR: { x: 0.55, y: 0, z: 0 }, ankleR: { x: -0.18, y: 0, z: 0 },
+      shoulderL: { x: 0.35, y: 0.05, z: -0.05 }, elbowL: { x: 0.15, y: 0, z: 0.05 },
+      shoulderR: { x: -0.4, y: -0.05, z: 0.05 }, elbowR: { x: -0.3, y: 0, z: -0.05 },
+      spine: { x: 0.03, y: 0.04, z: 0 },
     },
   },
   {
     id: 'run', title: '奔跑',
     joints: {
       ...zero(),
-      hipL: { x: -0.95, y: 0, z: 0.05 }, kneeL: { x: 0.85, y: 0, z: 0 }, ankleL: { x: 0.35, y: 0, z: 0 },
-      hipR: { x: 0.75, y: 0, z: 0.05 }, kneeR: { x: 1.35, y: 0, z: 0 }, ankleR: { x: -0.4, y: 0, z: 0 },
-      shoulderL: { x: -0.85, y: 0.08, z: 0.18 }, elbowL: { x: -1.5, y: 0, z: 0.1 },
-      shoulderR: { x: 0.75, y: -0.08, z: -0.18 }, elbowR: { x: -1.35, y: 0, z: -0.1 },
-      spine: { x: 0.14, y: 0, z: 0 }, chest: { x: 0.05, y: 0, z: 0 },
+      hipL: { x: -0.95, y: 0.06, z: 0.05 }, kneeL: { x: 0.9, y: 0, z: 0 }, ankleL: { x: 0.3, y: 0, z: 0 },
+      hipR: { x: 0.72, y: -0.06, z: 0.05 }, kneeR: { x: 1.3, y: 0, z: 0 }, ankleR: { x: -0.35, y: 0, z: 0 },
+      shoulderL: { x: -0.45, y: 0.08, z: -0.05 }, elbowL: { x: -0.35, y: 0, z: 0.15 },
+      shoulderR: { x: 0.45, y: -0.08, z: 0.05 }, elbowR: { x: 1.6, y: 0, z: -0.15 },
+      spine: { x: 0.12, y: 0, z: 0 }, chest: { x: 0.04, y: 0, z: 0 },
     },
   },
   {
     id: 'sit', title: '坐姿（悬空）',
     joints: {
       ...zero(),
-      hipL: { x: -1.45, y: 0.06, z: 0.08 }, kneeL: { x: 1.42, y: 0, z: 0 }, ankleL: { x: -0.25, y: 0, z: 0 },
-      hipR: { x: -1.35, y: -0.06, z: 0.08 }, kneeR: { x: 1.32, y: 0, z: 0 }, ankleR: { x: -0.25, y: 0, z: 0 },
-      spine: { x: 0.06, y: 0, z: 0 },
-      shoulderL: { x: -0.35, y: 0.1, z: 0.1 }, elbowL: { x: -0.5, y: 0, z: 0.05 },
-      shoulderR: { x: -0.35, y: -0.1, z: -0.1 }, elbowR: { x: -0.5, y: 0, z: -0.05 },
+      hipL: { x: -1.45, y: 0.06, z: 0.08 }, kneeL: { x: 1.45, y: 0, z: 0 }, ankleL: { x: 0, y: 0, z: 0 },
+      hipR: { x: -1.35, y: -0.06, z: 0.08 }, kneeR: { x: 1.35, y: 0, z: 0 }, ankleR: { x: 0, y: 0, z: 0 },
+      spine: { x: -0.06, y: 0, z: 0 },
+      shoulderL: { x: 0.0, y: 0.1, z: -0.05 }, elbowL: { x: 0.35, y: 0, z: -1.4 },
+      shoulderR: { x: 0.0, y: -0.1, z: 0.05 }, elbowR: { x: 0.35, y: 0, z: 1.4 },
     },
   },
   {
     id: 'kneel', title: '跪坐',
     joints: {
       ...zero(),
-      hipL: { x: 0.15, y: 0.05, z: 0.06 }, kneeL: { x: 2.3, y: 0, z: 0 }, ankleL: { x: 0.7, y: 0, z: 0 },
-      hipR: { x: 0.15, y: -0.05, z: 0.06 }, kneeR: { x: 2.3, y: 0, z: 0 }, ankleR: { x: 0.7, y: 0, z: 0 },
-      spine: { x: 0.02, y: 0, z: 0 },
+      hipL: { x: 1.45, y: 0.05, z: 0.06 }, kneeL: { x: -1.45, y: 0, z: 0 }, ankleL: { x: 1.9, y: 0, z: 0 },
+      hipR: { x: 1.45, y: -0.05, z: 0.06 }, kneeR: { x: -1.45, y: 0, z: 0 }, ankleR: { x: 1.9, y: 0, z: 0 },
+      spine: { x: -0.04, y: 0, z: 0 },
     },
   },
 ]
@@ -117,10 +126,4 @@ export const POSES: readonly PoseDef[] = POSE_LIST
 
 export function poseById(id: string): PoseDef | undefined {
   return POSES.find((p) => p.id === id)
-}
-
-/** 取姿势的规范化全关节表（姿势存在取库值；否则按 unknown 处理零表）。 */
-export function poseJoints(id: string): JointRotations {
-  const pose = poseById(id)
-  return pose !== undefined ? normalizePose(pose.joints) : zero()
 }

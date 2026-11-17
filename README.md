@@ -44,15 +44,15 @@ profile `package.json` 的 `dsh.profile.bundles`（DSH 只认这份名单，裸 
 - **生成**：模型（image-01 / H3-Image）、比例档（W:H）+ 面积档（1K/2K/4K，H3）、精确尺寸（H3，WxH）、
   像素宽高（image-01，512..2048 的 8 倍数）、张数（1..10）、seed / 提示词优化 / AIGC 水印（image-01）、
   提示词增强（H3，默认开）、主体参考（image-01，type=character）、参考图 1..16 张（H3，自动走编辑接口）。
-- **素体设计**：真人比例的**蒙皮人偶**（Mixamo X Bot，three.js 渲染，GLB 内联），解决图片模型在
-  **体型 / 动作 / 相机视角**三个维度难控制、难保一致的问题。滑杆调体型（身高 / 头身比 /
-  肩宽 / 胸围 / 腰围 / 臀围 / 四肢粗细 / 臂长 / 腿长，参数作用在骨骼缩放上）；姿势库 8 种
-  （T-pose / A-pose / 站立 / 叉腰 / 行走 / 奔跑 / 坐姿 / 跪坐，骨架驱动）；相机景别（全身 / 七分身 /
-  半身 / 特写）× 方位（正面 / 1/3 侧 / 正侧 / 背面）× 俯仰（平视 / 微俯 / 微仰）预设，
-  视口支持拖拽转方位、滚轮推拉。点「拍摄」离屏导出干净 PNG（三点柔光 + 接触阴影，长边
-  1024/1536/2048 × 比例 1:1/2:3/3:4/9:16）落盘归档（`<outDir>/refs/<refId>/`，ref.json
-  钉死当次体型 / 关节表 / 相机），参考图列表一键「用作参考图」进生成表单的 H3 参考图
-  （历史档跨会话可直接复用）。
+- **素体设计**：真人比例的**蒙皮人偶**（MakeHuman 基础网格 + 自建骨架，three.js 渲染，GLB 内联），
+  解决图片模型在 **体型 / 动作 / 相机视角**三个维度难控制、难保一致的问题。滑杆调体型（身高 /
+  头身比 / 肩宽 / 胸围 / 腰围 / 臀围 / 四肢粗细 / 臂长 / 腿长，围度走**网格形变**、长度走
+  **骨链缩放**，滑杆所见即所得）；姿势库 8 种（T-pose / A-pose / 站立 / 叉腰 / 行走 / 奔跑 /
+  坐姿 / 跪坐，骨架驱动）；相机景别（全身 / 七分身 / 半身 / 特写）× 方位（正面 / 1/3 侧 /
+  正侧 / 背面）× 俯仰（平视 / 微俯 / 微仰）预设，视口支持拖拽转方位、滚轮推拉。点「拍摄」离屏
+  导出干净 PNG（三点柔光 + 接触阴影，长边 1024/1536/2048 × 比例 1:1/2:3/3:4/9:16）落盘归档
+  （`<outDir>/refs/<refId>/`，ref.json 钉死当次体型 / 关节表 / 相机），参考图列表一键
+  「用作参考图」进生成表单的 H3 参考图（历史档跨会话可直接复用）。
 - **结果**：缩略图画廊（点开 lightbox 放大）、每张带实际尺寸与 `revised_prompt`（可展开），
   勾选 2..4 张进入并排对比视图。
 - **历史**：每轮生成落一个运行目录（`<outDir>/<runId>/`，图片 + `run.json` 清单），
@@ -65,23 +65,28 @@ profile `package.json` 的 `dsh.profile.bundles`（DSH 只认这份名单，裸 
 
 ### 素体模型（资产与骨架）
 
-素体不是程序化拼的几何体，而是**真人比例的蒙皮人偶**：Mixamo 的 X Bot（Adobe Mixamo 免版税
-角色，three.js examples 分发），构建期内联成 base64 进 client bundle（`assets/xbot.glb` →
-`scripts/generate-mannequin-glb.mjs` → `src/client/generated/mannequin-glb.ts`）。
+素体是**真人比例的蒙皮人偶**：MakeHuman 基础网格（CC0，文件头写明 2020 年以 CC0 释出）
++ 本仓自建的 28 骨骨架 + 蒙皮权重，构建期内联成 base64 进 client bundle。
 
-- **资产处理**：`scripts/fix-quantized-glb.mjs` 把 Mixamo 导出的量化 GLB 转成 three 能正确
-  解读的形态（解码顶点为 float32、去掉 `KHR_mesh_quantization` 声明、几何清理）。
-  **不许用 gltf-transform 的 `optimize()`**：它会重新量化顶点，而 three 的 GLTFLoader 只按
-  `v / 32767` 解读量化属性、丢掉 accessor 的 min/max，几何会被压成单位立方体。
-- **骨架驱动**：16 个关节映射到 mixamorig 骨名，姿势按世界系级联合成
-  （`src/client/mannequin/rig.ts`）；落臂补偿按模型实测的 rest 臂轴动态算；体型参数作用在
-  骨骼缩放与位移上（`src/client/mannequin/body.ts`）。
-- **方向事实**：模型前方 = **+z**（实测脚尖方向），正面机位在 +z，影棚主光与补光也在 +z 侧。
-- **装配红线**：Mixamo 的网格几何是米级、骨架是厘米级，靠 Armature 节点的 0.01 与 skin 的
-  inverseBindMatrices（厘米空间）配对，蒙皮时自动抵消。**不要改节点层级、不要给网格补
-  scale、不要解挂网格**，任何一项都会破坏配对（实测：躯干塌陷）。
-- 开发期可用 `scripts/glb-skeleton.mjs` / `scripts/glb-bone-axes.mjs` 定量读资产结构与骨轴，
-  `scripts/rig-repro.mjs` 在 Node 里复现姿势级联，避免靠截图猜。
+- **资产流水线**（三步，都在 `packages/dsh-image-design/scripts/`）：
+  1. `fetch-makehuman-base.mjs`：按**钉死的 commit** 拉源网格（上游随时可能改网格）
+     → `assets/makehuman-base.obj`；
+  2. `build-mannequin-body.mjs`：只取 `body` 组的面（丢掉 helper / 关节辅助球），用
+     `joint-*` 辅助球的球心摆骨，按「顶点→骨段距离」算蒙皮权重（前 4 根归一 + 邻域平滑），
+     写出带蒙皮的 `assets/mannequin-body.glb`（POSITION / NORMAL / JOINTS_0 / WEIGHTS_0 + skin）；
+  3. `generate-mannequin-glb.mjs`：GLB → base64 模块（构建期自动跑）。
+- **顶点属性不许交错**：gltf-transform 默认的 interleaved 布局会把 JOINTS_0（UNSIGNED_SHORT）
+  与 POSITION / NORMAL / WEIGHTS_0（FLOAT）混进同一个 bufferView —— glTF 不允许（同一视图内
+  componentType 必须一致），three.js 读出来蒙皮索引全是顶点坐标，模型直接散架。构建脚本用
+  `VertexLayout.SEPARATE` 分视图，`tests/mannequin-asset.spec.ts` 守着这条。
+- **体型参数怎么落地**：躯干是**跨骨平滑蒙皮**的，只缩放脊柱那几根骨围度几乎看不出来
+  （「滑杆形同虚设」的根因）。所以围度类（胸 / 腰 / 臀 / 肩宽）走**区域场网格形变**：
+  在躯干高度带上按平滑权重直接缩放顶点（只作用于主导骨是躯干骨的顶点，手臂腿不受影响）；
+  四肢粗细走**垂直骨轴**放大（关节位置不动）；臂长 / 腿长走**骨链局部位移缩放**（关节跟着走）。
+- **骨架语义**：28 根骨，局部旋转全是单位阵 → 骨的朝向就是世界朝向，姿势欧拉按世界轴书写；
+  绑定姿态就是 A-pose（手臂自然下垂约 40°），所以不需要「落臂补偿」。角色左 = +x，面朝 +z。
+- **开发期离线验姿势**：`scripts/preview-body.mjs` 在 Node 里读 GLB 做蒙皮 + 软件光栅出 PNG
+  （`GRID=1` 出全部姿势拼图），并打印关节点世界坐标 —— 调姿势用数字对齐，不靠截图猜。
 
 ## 配置
 
@@ -170,8 +175,9 @@ src/client/ImageDesignIcon.tsx 清单条目图标（读生成的 icon-art，data
 src/client/generated/icon-art.ts 图标美术生成物（由 icon.svg 生成，勿手改）
 src/client/App.tsx   面板本体（表单 / 画廊 / 对比浮层 / 历史视图）
 src/client/MannequinView.tsx 素体视图（视口 + 体型滑杆 / 姿势 / 机位 / 拍摄 / 参考图列表）
-src/client/mannequin/body.ts  体型参数面 + 参数→骨骼缩放映射
-src/client/mannequin/rig.ts   骨架装配层（关节↔骨名映射、落臂补偿、世界系级联姿势合成）
+src/client/mannequin/body.ts  体型参数面 + 参数→形变指令（区域场 / 骨轴 / 骨链长度）
+src/client/mannequin/shape.ts 网格形变（绑定姿态 LBS 混合 + 区域场 + 胸廓双峰）
+src/client/mannequin/rig.ts   骨架装配层（关节↔骨名映射、世界系级联姿势合成）
 src/client/mannequin/poses.ts 姿势库（8 种，关节欧拉角表）
 src/client/mannequin/camera.ts 景别 × 方位 × 俯仰机位预设
 src/client/mannequin/capture.ts 影棚灯光与离屏导出
@@ -186,10 +192,12 @@ locale/*.json       展示元数据（meta.title / meta.description）
 icon.svg            插件图标（≤ 256 KiB）
 tsconfig.typert.json  typert face program（生成器解析本包源码用）
 tests/              bundle 形态守卫 / client 边界护栏 / 自身用例
-assets/xbot.glb     素体资产（Mixamo X Bot，反量化后的 GLB）
+assets/makehuman-base.obj 素体源网格（MakeHuman base，CC0，钉死 commit 拉取）
+assets/mannequin-body.glb  素体资产（源网格 + 自建骨架 + 蒙皮权重的构建产物）
+scripts/fetch-makehuman-base.mjs   拉源网格（钉 commit）
+scripts/build-mannequin-body.mjs   源网格 → 骨架 + 蒙皮权重 → GLB
 scripts/generate-mannequin-glb.mjs 资产 → 内联 base64 生成物（构建期跑）
-scripts/fix-quantized-glb.mjs      Mixamo 量化 GLB → three 可解读 GLB（资产流水线）
-scripts/glb-skeleton.mjs / glb-bone-axes.mjs / rig-repro.mjs  开发期定量探针
+scripts/preview-body.mjs           开发期离线预览（蒙皮 + 软件光栅 + 关节点坐标）
 tsconfig.host.json    typert 生成器的 workspace 聚合配置（registration + paths 重定向）
 packages/protocol/  协议声明源 submodule（dreamariner/dsh-typert-protocol）
 ```

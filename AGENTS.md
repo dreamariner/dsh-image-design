@@ -40,38 +40,37 @@
 2. **读图链路**（client 展示）：face `readImage(runId, file)` 只认该轮 `run.json`
    `images[].file` allowlist（防路径越界）→ base64 → client 转 blob URL（`urls` 缓存）。
 3. **历史链路**：`listRuns` 只认有 `run.json` 的目录；删除 = 移除整个运行目录。
-4. **素体参考图链路**（issue 003）：client `mannequin/`（body.ts 体型参数面 + 参数→骨骼缩放
-   映射；rig.ts 16 关节↔mixamorig 骨映射 + 落臂补偿 + 世界系级联姿势合成；poses.ts 8 姿势 =
+4. **素体参考图链路**（issue 003）：client `mannequin/`（body.ts 体型参数面 + 形变指令；
+   shape.ts 绑定姿态网格形变；rig.ts 16 关节↔骨映射 + 世界系级联姿势合成；poses.ts 8 姿势 =
    关节欧拉角表；camera.ts 景别×方位×俯仰预设；capture.ts 影棚 + 离屏导出；viewer.ts GLB 加载
-   + 骨架绑定 + 轨道交互）→ wire `saveRefShot`（dataUrl 严格校验）→ `src/mannequin-handlers.ts`
+   + 骨架绑定 + 形变 + 轨道交互）→ wire `saveRefShot`（dataUrl 严格校验）→ `src/mannequin-handlers.ts`
    落盘 `<outDir>/refs/<refId>/`（ref_001.png + ref.json 钉死体型/关节表/相机）；读图
    `readRefImage` 只认该参考图清单 allowlist。`listRefs` 带 absPath（历史参考图跨会话可复用），
    「用作参考图」把 absPath 追加进生成表单的 H3 refImages 并切回生成视图。
 
 ## 素体资产与骨架纪律（改素体前先读）
 
-- **模型是真人比例的蒙皮人偶**，不是程序化几何：Mixamo X Bot（Adobe Mixamo 免版税角色，
-  three.js examples 分发），`assets/xbot.glb` 经 `scripts/fix-quantized-glb.mjs` 反量化 →
-  `scripts/generate-mannequin-glb.mjs` 内联成 base64（`src/client/generated/mannequin-glb.ts`，
-  构建期自动跑）。
-- **不许再量化**：three 的 GLTFLoader 只按 `v / 32767` 解读量化属性、丢掉 accessor 的
-  min/max，几何会被压成单位立方体。gltf-transform 的 `optimize()` 会重新量化，禁用在
-  反量化之后。
-- **不许动节点层级与 scale**：Mixamo 的网格几何是米级、骨架是厘米级，靠 Armature 节点的
-  0.01 与 skin 的 inverseBindMatrices（厘米空间）配对，蒙皮时自动抵消。改层级 / 补 scale /
-  解挂网格都会破坏配对（实测躯干塌陷）。
-- **方向事实**：模型前方 = +z（实测脚尖方向），正面机位在 +z，影棚主光与补光也在 +z 侧。
-- **手性**：姿势表 z 分量语义是「向外展开」（左 + / 右 −），Mixamo 角色左在世界系的方向
-  随模型朝向而变，故按左肩世界 X 位置统一乘 `zSign`（rig.ts）。手性判错会让右臂收进躯干。
-- **落臂补偿按实测**：骨轴 = 子骨世界位置 − 本骨世界位置（本地 +X/+Y 约定不可靠），
-  再转到竖直向下 + 轻微外张。
-- **级联公式**：新本地旋转 = 姿势欧拉 ∘ 落臂补偿 ∘ rest 本地旋转（用 rest **本地**旋转，
-  不用世界旋转，否则子骨不跟随父骨，落臂时前臂留在水平）。
+- **模型是真人比例的蒙皮人偶**：MakeHuman 基础网格（CC0，`assets/makehuman-base.obj`，按钉死
+  commit 拉取）+ 本仓自建 28 骨骨架 + 蒙皮权重 → `assets/mannequin-body.glb` → 构建期内联成
+  base64（`src/client/generated/mannequin-glb.ts`）。三条脚本：
+  `fetch-makehuman-base.mjs` → `build-mannequin-body.mjs` → `generate-mannequin-glb.mjs`。
+- **顶点属性不许交错**（2026-11-17 实机事故）：gltf-transform 默认 interleaved 会把 JOINTS_0
+  （UNSIGNED_SHORT）与 POSITION / NORMAL / WEIGHTS_0（FLOAT）混进同一 bufferView，glTF 不允许，
+  three.js 读出来蒙皮索引全是顶点坐标 → 模型散架。构建脚本用 `VertexLayout.SEPARATE`，
+  `tests/mannequin-asset.spec.ts` 守着。
+- **体型参数必须落到网格上**：躯干是跨骨平滑蒙皮的，缩放脊柱骨围度几乎看不出来（「滑杆形同
+  虚设」的根因）。围度类走**区域场形变**（躯干高度带 + 平滑权重，只作用于主导骨是躯干骨的
+  顶点），四肢粗细走垂直骨轴放大，臂长腿长走骨链局部位移缩放。改体型逻辑先读
+  `src/client/mannequin/shape.ts`。
+- **区域之间不能各自叠加**：胸 / 腰 / 臀的高度带会重叠，各自叠加会互相抵消（臀变宽抵掉腰变细）。
+  区域缩放要**加权平均**（重叠区平滑过渡，边缘按总覆盖度淡出）。
+- **骨架语义**：28 根骨，局部旋转全是单位阵 → 骨的朝向就是世界朝向，姿势欧拉按世界轴书写；
+  绑定姿态就是 A-pose，**不需要落臂补偿**。角色左 = +x，面朝 +z（与旧 Mixamo 资产同约定）。
 - **glTF 节点默认 `matrixAutoUpdate = false`**：改骨骼的 quaternion / scale 前必须改回 true
   并 `updateMatrix()`，否则蒙皮纹丝不动。
-- 改姿势或资产的每一步都要**定量验证**（骨轴方向、关节世界位置、朝向），别靠截图猜：
-  开发期探针 `scripts/glb-skeleton.mjs` / `scripts/glb-bone-axes.mjs` / `scripts/rig-repro.mjs`，
-  实机 `window.__mannequinDebug` 出口（卸载时自动清）。
+- **改姿势或体型要定量验证**：`scripts/preview-body.mjs` 在 Node 里读 GLB 做蒙皮 + 软件光栅出
+  PNG（`GRID=1` 出全部姿势拼图），并打印关节点世界坐标；实机另有 `window.__mannequinDebug`
+  出口（卸载时自动清）。别靠截图猜。
 
 计费红线（mmx-h3-image skill 实证）：接口非幂等，无任何自动重试；客户端超时 ≥ 600 秒；
 `signal` 只拦「尚未发出」段，已发出的生成不响应取消，结果照常进历史。

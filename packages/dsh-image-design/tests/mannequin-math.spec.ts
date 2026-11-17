@@ -1,19 +1,23 @@
 // @dreamariner/dsh-image-design :: 素体纯函数测试（不渲染，不碰 WebGL）
 //
-// 覆盖：体型→骨骼缩放映射、姿势表完整性、骨架装配语义（世界系合成）、
-// 相机预设形状、拍摄尺寸。GLB 加载与渲染在实机验收里走查。
+// 覆盖：体型→形变指令映射、网格形变数学（绑定姿态 LBS 混合）、骨架装配语义
+// （世界系欧拉 + 级联）、姿势表完整性、相机预设形状、拍摄尺寸。
+// GLB 加载与渲染在实机验收里走查（scripts/preview-body.mjs 可离线出图）。
 
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { DEFAULT_BODY, boneTunes, BONE, JOINT_NAMES, type BodyParams } from '../src/client/mannequin/body.ts'
+import {
+  DEFAULT_BODY, shapeTunes, lengthTunes, positionTunes, BONE, JOINT_NAMES, type BodyParams,
+} from '../src/client/mannequin/body.ts'
+import { applyShape, type ShapeContext } from '../src/client/mannequin/shape.ts'
 import { POSES, poseJoints, normalizePose } from '../src/client/mannequin/poses.ts'
-import { JOINT_BONES, APPLY_ORDER, bindRig, applyRigPose, Q_DOWN_L, Q_DOWN_R } from '../src/client/mannequin/rig.ts'
+import { JOINT_BONES, APPLY_ORDER, bindRig, applyRigPose } from '../src/client/mannequin/rig.ts'
 import { computeCameraPose, presetOrbit, SHOTS } from '../src/client/mannequin/camera.ts'
 import { captureSize } from '../src/client/mannequin/capture.ts'
 
 const params = (over: Partial<BodyParams> = {}): BodyParams => ({ ...DEFAULT_BODY, ...over })
 
-/** 全骨架测试桩：hips 平铺挂全部映射骨骼；位置按人形摆（臂水平、腿竖直）。 */
+/** 新骨架的测试桩：局部旋转全是单位阵（与真实资产一致），角色左 = +x。 */
 function stubSkeleton(): THREE.Object3D {
   const root = new THREE.Object3D()
   root.name = 'mixamorigHips'
@@ -24,25 +28,29 @@ function stubSkeleton(): THREE.Object3D {
     parent.add(o)
     return o
   }
-  const spine = mk('mixamorigSpine', root, [0, 0.95, 0])
+  // 脊柱链（y 向上）
+  const spine = mk('mixamorigSpine', root, [0, 0.1, 0])
   const spine1 = mk('mixamorigSpine1', spine, [0, 0.1, 0])
   const spine2 = mk('mixamorigSpine2', spine1, [0, 0.15, 0])
-  const neck = mk('mixamorigNeck', spine2, [0, 0.2, 0])
-  mk('mixamorigHead', neck, [0, 0.12, 0])
-  // 锁骨 → 上臂 → 前臂 → 手（局部位置沿 ±x 水平伸出，模拟 T-pose）
+  const spine3 = mk('mixamorigSpine3', spine2, [0, 0.2, 0])
+  const neck = mk('mixamorigNeck', spine3, [0, 0.2, 0])
+  mk('mixamorigHead', neck, [0, 0.1, 0])
+  mk('mixamorigHeadTop', neck, [0, 0.12, 0])
+  // 锁骨 → 上臂 → 前臂 → 手（角色左 = +x）
   for (const side of ['Left', 'Right'] as const) {
-    const s = side === 'Left' ? -1 : 1
-    const clav = mk(`mixamorig${side}Shoulder`, spine2, [s * 0.05, 0.05, 0])
-    const arm = mk(`mixamorig${side}Arm`, clav, [s * 0.1, 0, 0])
-    const fore = mk(`mixamorig${side}ForeArm`, arm, [s * 0.3, 0, 0])
-    mk(`mixamorig${side}Hand`, fore, [s * 0.25, 0, 0])
+    const s = side === 'Left' ? 1 : -1
+    const clav = mk(`mixamorig${side}Shoulder`, spine3, [s * 0.05, 0.05, 0])
+    const arm = mk(`mixamorig${side}Arm`, clav, [s * 0.12, 0, 0])
+    const fore = mk(`mixamorig${side}ForeArm`, arm, [s * 0.25, 0, 0])
+    mk(`mixamorig${side}Hand`, fore, [s * 0.22, 0, 0])
   }
-  // 髋 → 大腿 → 小腿 → 脚（局部位置沿 -y 竖直向下）
+  // 髋 → 大腿 → 小腿 → 脚
   for (const side of ['Left', 'Right'] as const) {
-    const s = side === 'Left' ? -1 : 1
+    const s = side === 'Left' ? 1 : -1
     const up = mk(`mixamorig${side}UpLeg`, root, [s * 0.1, -0.05, 0])
     const leg = mk(`mixamorig${side}Leg`, up, [0, -0.4, 0])
-    mk(`mixamorig${side}Foot`, leg, [0, -0.4, 0])
+    const foot = mk(`mixamorig${side}Foot`, leg, [0, -0.4, 0])
+    mk(`mixamorig${side}ToeBase`, foot, [0, -0.05, 0.15])
   }
   return root
 }
@@ -54,44 +62,160 @@ function boneAxis(binding: { bones: Map<string, THREE.Object3D> }, from: string,
   return b.sub(a).normalize()
 }
 
-describe('体型 → 骨骼缩放映射', () => {
+describe('体型 → 形变指令', () => {
   it('头身比越大头越小（7.5 为基准 1.0）', () => {
-    const tunes = boneTunes(params())
-    const head = tunes.find((t) => t.bone === BONE.head)
+    const head = shapeTunes(params()).find((t) => t.bone === BONE.head)
     expect(head?.scale).toEqual([1, 1, 1])
-    const small = boneTunes(params({ headRatio: 9 })).find((t) => t.bone === BONE.head)
+    const small = shapeTunes(params({ headRatio: 9 })).find((t) => t.bone === BONE.head)
+    expect(small?.mode).toBe('uniform')
     expect(small?.scale?.[0]).toBeCloseTo(7.5 / 9, 8)
   })
 
-  it('腰围系数减小 → Spine1 深度（z）缩到系数、宽度（x）半强度', () => {
-    const slim = boneTunes(params({ waist: 0.6 })).find((t) => t.bone === BONE.spine1)
+  it('腰围系数 → 腰骨的区域场缩放（绕中线缩 x/z，带高度衰减）', () => {
+    const slim = shapeTunes(params({ waist: 0.6 })).find((t) => t.bone === BONE.spine1)
+    expect(slim?.mode).toBe('region')
     expect(slim?.scale?.[2]).toBeCloseTo(0.6, 8)
-    expect(slim?.scale?.[0]).toBeCloseTo(0.75 + 0.25 * 0.6, 8)
+    expect(slim?.scale?.[0]).toBeCloseTo(0.6, 8)
+    expect(slim?.height).toBeGreaterThan(0)
   })
 
-  it('肩宽系数对称外移锁骨', () => {
-    const tunes = boneTunes(params({ shoulderWidth: 1.3 }))
-    const l = tunes.find((t) => t.bone === BONE.shoulderL)
-    const r = tunes.find((t) => t.bone === BONE.shoulderR)
-    expect(l?.position?.[0]).toBeCloseTo(0.3 * 0.04, 8)
-    expect(r?.position?.[0]).toBeCloseTo(-0.3 * 0.04, 8)
+  it('肩宽 → 锁骨横向缩放（左右对称）', () => {
+    const tunes = shapeTunes(params({ shoulderWidth: 1.3 }))
+    const l = tunes.find((t) => t.bone === BONE.clavicleL)
+    const r = tunes.find((t) => t.bone === BONE.clavicleR)
+    expect(l?.scale?.[0]).toBeCloseTo(1.3, 8)
+    expect(r?.scale?.[0]).toBeCloseTo(1.3, 8)
   })
 
-  it('四肢粗细作用在 x/z、臂长作用在骨轴 y', () => {
-    const arm = boneTunes(params({ limbThickness: 1.2, armLength: 1.1 })).find((t) => t.bone === BONE.armL)
-    expect(arm?.scale).toEqual([1.2, 1.1, 1.2])
+  it('胸围 / 臀围 → 胸骨 / 骨盆的区域场缩放', () => {
+    const bust = shapeTunes(params({ bust: 1.4 })).find((t) => t.bone === BONE.spine2)
+    expect(bust?.mode).toBe('region')
+    expect(bust?.scale?.[0]).toBeCloseTo(1.4, 8)          // 横向全强度
+    expect(bust?.scale?.[2]).toBeCloseTo(1.18, 8)         // 纵深半强度（不把肋骨推成肚子）
+    const hip = shapeTunes(params({ hip: 1.3 })).find((t) => t.bone === BONE.hips)
+    expect(hip?.mode).toBe('region')
+    expect(hip?.scale?.[0]).toBeCloseTo(1.3, 8)
   })
 
-  it('髋宽撑开 Hips 的 x/z', () => {
-    const hips = boneTunes(params({ hip: 1.4 })).find((t) => t.bone === BONE.hips)
-    expect(hips?.scale).toEqual([1.4, 1, 1.4])
+  it('肩宽 → 锁骨横向缩放 + 上臂关节外移', () => {
+    const tunes = shapeTunes(params({ shoulderWidth: 1.3 }))
+    const l = tunes.find((t) => t.bone === BONE.clavicleL)
+    const r = tunes.find((t) => t.bone === BONE.clavicleR)
+    expect(l?.scale?.[0]).toBeCloseTo(1.3, 8)
+    expect(r?.scale?.[0]).toBeCloseTo(1.3, 8)
+    const pos = positionTunes(params({ shoulderWidth: 1.3 }))
+    expect(pos[BONE.armL][0]).toBeGreaterThan(0)
+    expect(pos[BONE.armR][0]).toBeLessThan(0)
+    expect(Math.abs(pos[BONE.armL][0])).toBeCloseTo(Math.abs(pos[BONE.armR][0]), 8)
+  })
+
+  it('四肢粗细 → 四肢骨的 radial 模式', () => {
+    const arm = shapeTunes(params({ limbThickness: 1.2 })).find((t) => t.bone === BONE.armL)
+    expect(arm?.mode).toBe('radial')
+    expect(arm?.scale?.[0]).toBeCloseTo(1.2, 8)
   })
 
   it('默认体型全部归一（不产生任何形变）', () => {
-    for (const tune of boneTunes(params())) {
-      if (tune.scale !== undefined) expect(tune.scale).toEqual([1, 1, 1])
-      if (tune.position !== undefined) expect(tune.position).toEqual([0, 0, 0])
+    for (const tune of shapeTunes(params())) {
+      if (tune.mode === 'uniform' || tune.mode === 'radial') expect(tune.scale[0]).toBeCloseTo(1, 8)
+      else { expect(tune.scale[0]).toBeCloseTo(1, 8); expect(tune.scale[1]).toBeCloseTo(1, 8); expect(tune.scale[2]).toBeCloseTo(1, 8) }
     }
+  })
+
+  it('臂长 / 腿长 → 子骨局部位移的缩放系数（上臂 / 前臂 / 大腿 / 小腿）', () => {
+    const tunes = lengthTunes(params({ armLength: 1.1, legLength: 0.9 }))
+    expect(tunes[BONE.foreArmL]).toBeCloseTo(1.1, 8)
+    expect(tunes[BONE.handL]).toBeCloseTo(1.1, 8)
+    expect(tunes[BONE.legL]).toBeCloseTo(0.9, 8)
+    expect(tunes[BONE.footR]).toBeCloseTo(0.9, 8)
+  })
+})
+
+describe('网格形变（绑定姿态 LBS 混合）', () => {
+  /** 造一个 1 顶点、1 骨的最小几何，验证形变数学。 */
+  function oneVertex(px: number, py: number, pz: number): { geom: THREE.BufferGeometry; ctx: ShapeContext } {
+    const geom = new THREE.BufferGeometry()
+    geom.setAttribute('position', new THREE.Float32BufferAttribute([px, py, pz], 3))
+    geom.setAttribute('skinIndex', new THREE.Uint16BufferAttribute([0, 0, 0, 0], 4))
+    geom.setAttribute('skinWeight', new THREE.Float32BufferAttribute([1, 0, 0, 0], 4))
+    const ctx: ShapeContext = {
+      base: new Float32Array([px, py, pz]),
+      joints: new Uint16Array([0, 0, 0, 0]),
+      weights: new Float32Array([1, 0, 0, 0]),
+      boneIndex: new Map([['bone', 0]]),
+      boneWorld: new Map([['bone', new THREE.Vector3(0, 0, 0)]]),
+      boneAxis: new Map([['bone', new THREE.Vector3(0, 1, 0)]]),
+      chestBone: 'bone',
+    }
+    return { geom, ctx }
+  }
+
+  it('axis 模式：绕骨心缩放顶点', () => {
+    const { geom, ctx } = oneVertex(0.2, 0.1, 0)
+    // 锁骨 spine3 axis 缩放 1.5（x）
+    ctx.boneIndex.set(BONE.clavicleL, 0)
+    ctx.boneWorld.set(BONE.clavicleL, new THREE.Vector3(0, 0, 0))
+    applyShape(geom, ctx, params({ shoulderWidth: 1.5 }))
+    const p = geom.getAttribute('position')
+    expect(p.getX(0)).toBeCloseTo(0.3, 5)
+    expect(p.getZ(0)).toBeCloseTo(0, 5)
+  })
+
+  it('radial 模式：沿骨轴不变、垂直方向放大', () => {
+    const { geom, ctx } = oneVertex(0.1, 0.5, 0)
+    ctx.boneIndex.set(BONE.armL, 0)
+    ctx.boneWorld.set(BONE.armL, new THREE.Vector3(0, 0, 0))
+    ctx.boneAxis.set(BONE.armL, new THREE.Vector3(0, 1, 0))
+    applyShape(geom, ctx, params({ limbThickness: 1.5 }))
+    const p = geom.getAttribute('position')
+    expect(p.getY(0)).toBeCloseTo(0.5, 5)   // 沿骨轴不动
+    expect(p.getX(0)).toBeCloseTo(0.15, 5)  // 垂直方向放大 1.5
+  })
+
+  it('权重混合：多骨影响按权重插值', () => {
+    const geom = new THREE.BufferGeometry()
+    geom.setAttribute('position', new THREE.Float32BufferAttribute([0.2, 0, 0], 3))
+    geom.setAttribute('skinIndex', new THREE.Uint16BufferAttribute([0, 1, 0, 0], 4))
+    geom.setAttribute('skinWeight', new THREE.Float32BufferAttribute([0.5, 0.5, 0, 0], 4))
+    const ctx: ShapeContext = {
+      base: new Float32Array([0.2, 0, 0]),
+      joints: new Uint16Array([0, 1, 0, 0]),
+      weights: new Float32Array([0.5, 0.5, 0, 0]),
+      boneIndex: new Map([[BONE.clavicleL, 0], [BONE.head, 1]]),
+      boneWorld: new Map([
+        [BONE.clavicleL, new THREE.Vector3(0, 0, 0)],
+        [BONE.head, new THREE.Vector3(0, 0, 0)],
+      ]),
+      boneAxis: new Map(),
+      chestBone: BONE.spine2,
+    }
+    // 锁骨 ×1.5 与头骨 ×1.0 各占一半权重：x = 0.5·(0.2·1.5) + 0.5·(0.2·1.0) = 0.25
+    applyShape(geom, ctx, params({ shoulderWidth: 1.5 }))
+    const p = geom.getAttribute('position')
+    expect(p.getX(0)).toBeCloseTo(0.25, 5)
+    expect(p.getZ(0)).toBeCloseTo(0, 5)
+  })
+
+  it('region 模式：躯干高度带内按权重缩放，band 外不动', () => {
+    const geom = new THREE.BufferGeometry()
+    // 两个顶点：y=1.1（胸骨带内）与 y=1.6（带外）
+    geom.setAttribute('position', new THREE.Float32BufferAttribute([0.2, 1.1, 0, 0.2, 1.6, 0], 3))
+    geom.setAttribute('skinIndex', new THREE.Uint16BufferAttribute([0, 0, 0, 0, 0, 0, 0, 0], 4))
+    geom.setAttribute('skinWeight', new THREE.Float32BufferAttribute([1, 0, 0, 0, 1, 0, 0, 0], 4))
+    const ctx: ShapeContext = {
+      base: new Float32Array([0.2, 1.1, 0, 0.2, 1.6, 0]),
+      joints: new Uint16Array([0, 0, 0, 0, 0, 0, 0, 0]),
+      weights: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0]),
+      boneIndex: new Map([[BONE.spine2, 0]]),
+      boneWorld: new Map([[BONE.spine2, new THREE.Vector3(0, 1.1, 0)]]),
+      boneAxis: new Map(),
+      chestBone: BONE.spine2,
+      torsoBones: [BONE.spine2],
+    }
+    applyShape(geom, ctx, params({ bust: 1.5 }))
+    const p = geom.getAttribute('position')
+    expect(p.getX(0)).toBeCloseTo(0.3, 4)   // 带内：缩放生效
+    expect(p.getX(1)).toBeCloseTo(0.2, 4)   // 带外：不动
   })
 })
 
@@ -104,50 +228,31 @@ describe('骨架装配（rig）', () => {
     expect(APPLY_ORDER.indexOf('chest')).toBeLessThan(APPLY_ORDER.indexOf('shoulderL'))
   })
 
-  it('落臂补偿：rest 臂轴（按子骨位置差）转到竖直向下 + 轻微外张', () => {
-    // 动态补偿：臂骨 rest 臂轴水平（+x / -x）都应转成「向下」
-    for (const armX of [-1, 1]) {
-      const root = stubSkeleton()
-      const binding = bindRig(root)
-      const arm = binding.bones.get('shoulderL') as THREE.Object3D
-      const fore = binding.bones.get('elbowL') as THREE.Object3D
-      // 让左臂轴指向 +x 或 -x（fore 是 arm 的子节点，改 fore 的局部位置即改臂轴）
-      const dx = armX * 0.3
-      arm.position.x = -dx
-      fore.position.x = dx
-      root.updateMatrixWorld(true)
-      const binding2 = bindRig(root)
-      applyRigPose(binding2, {})
-      root.updateMatrixWorld(true)
-      const dir = boneAxis(binding2, 'shoulderL', 'elbowL')
-      expect(dir.y, `armAxis=${armX}`).toBeLessThan(-0.9)
-    }
+  it('手性：角色左在世界系 +x → zSign = 1', () => {
+    const binding = bindRig(stubSkeleton())
+    expect(binding.zSign).toBe(1)
   })
 
-  it('世界系合成：T-pose（零表 + π/2）把臂从垂放抬回水平', () => {
+  it('级联：转肩时肘与腕跟着走（子骨随父骨新朝向）', () => {
     const root = stubSkeleton()
     const binding = bindRig(root)
-    applyRigPose(binding, poseJoints('t-pose'))
+    applyRigPose(binding, { shoulderL: { x: 0, y: 0, z: 0.8 } })
     root.updateMatrixWorld(true)
     const dir = boneAxis(binding, 'shoulderL', 'elbowL')
-    // T-pose：z = π/2 抬平
-    expect(Math.abs(dir.y)).toBeLessThan(0.12)
-    expect(Math.abs(dir.x)).toBeGreaterThan(0.95)
-    // 零表 = 自然垂放（语义 rest）
-    applyRigPose(binding, poseJoints('a-pose'))
-    root.updateMatrixWorld(true)
-    const hang = boneAxis(binding, 'shoulderL', 'elbowL')
-    expect(hang.y).toBeLessThan(-0.8)
+    // 绑定姿态臂轴水平 +x；绕世界 z 转 0.8 → 抬起
+    expect(dir.y).toBeGreaterThan(0.5)
+    expect(dir.x).toBeGreaterThan(0.4)
   })
 
-  it('脊柱前屈：x 负把上身压向模型前方（-z，Mixamo 面朝方向）', () => {
+  it('脊柱前倾：x 正把上身压向模型前方（+z）', () => {
     const root = stubSkeleton()
     const binding = bindRig(root)
+    applyRigPose(binding, { spine: { x: 0.3, y: 0, z: 0 } })
+    root.updateMatrixWorld(true)
     const spine = binding.bones.get('spine') as THREE.Object3D
-    applyRigPose(binding, { spine: { x: -0.3, y: 0, z: 0 } })
     spine.updateWorldMatrix(true, false)
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(spine.getWorldQuaternion(new THREE.Quaternion()))
-    expect(up.z).toBeLessThan(-0.2) // 上身朝 -z 前倾（模型前方）
+    expect(up.z).toBeGreaterThan(0.2)
   })
 })
 
@@ -164,10 +269,19 @@ describe('姿势库', () => {
     }
   })
 
-  it('T-pose 双臂水平展开（肩 z = ±π/2）', () => {
+  it('a-pose 是绑定姿态（全零表）', () => {
+    const a = poseJoints('a-pose')
+    for (const j of JOINT_NAMES) {
+      expect(a[j].x).toBe(0)
+      expect(a[j].y).toBe(0)
+      expect(a[j].z).toBe(0)
+    }
+  })
+
+  it('T-pose 双臂水平展开（肩 z = ±π/2 量级，左右镜像）', () => {
     const t = poseJoints('t-pose')
-    expect(t.shoulderL.z).toBeCloseTo(Math.PI / 2, 8)
-    expect(t.shoulderR.z).toBeCloseTo(-Math.PI / 2, 8)
+    expect(t.shoulderL.z).toBeCloseTo(-t.shoulderR.z, 8)
+    expect(Math.abs(t.shoulderL.z)).toBeGreaterThan(0.6)
   })
 
   it('normalizePose 补全缺省关节为 0、剔除未知关节', () => {
@@ -185,12 +299,12 @@ describe('相机预设', () => {
     expect(SHOTS.half.distanceFactor).toBeGreaterThan(SHOTS.closeup.distanceFactor)
   })
 
-  it('方位角：正面机位在 +z（模型前方，实测脚尖方向），背面 = -z，正侧 = ±x', () => {
+  it('方位角：正面机位在 +z（模型前方），背面 = -z，正侧 = ±x', () => {
     const front = computeCameraPose('full', presetOrbit('full', 'front', 'level'), 1.7)
-    expect(front.position.z).toBeGreaterThan(0) // 正面机位在 +z
+    expect(front.position.z).toBeGreaterThan(0)
     const back = computeCameraPose('full', presetOrbit('full', 'back', 'level'), 1.7)
     expect(back.position.x).toBeCloseTo(0, 6)
-    expect(back.position.z).toBeLessThan(0) // 背面机位在 -z
+    expect(back.position.z).toBeLessThan(0)
     const side = computeCameraPose('full', presetOrbit('full', 'side', 'level'), 1.7)
     expect(Math.abs(side.position.x)).toBeGreaterThan(0)
     expect(Math.abs(side.position.z)).toBeLessThan(1e-6)
@@ -223,5 +337,4 @@ describe('拍摄尺寸', () => {
     expect(captureSize(1536, '3:4')).toEqual({ width: 1152, height: 1536 })
     expect(captureSize(2048, '9:16')).toEqual({ width: 1152, height: 2048 })
   })
-
 })

@@ -17,10 +17,10 @@ export interface ShotPreset {
 }
 
 export const SHOTS: Record<ShotKind, ShotPreset> = {
-  full: { distanceFactor: 2.35, targetYFactor: 0.52 },
-  threeQuarter: { distanceFactor: 1.45, targetYFactor: 0.74 },
-  half: { distanceFactor: 0.9, targetYFactor: 0.76 },
-  closeup: { distanceFactor: 0.5, targetYFactor: 0.9 },
+  full: { distanceFactor: 1.9, targetYFactor: 0.5 },
+  threeQuarter: { distanceFactor: 1.25, targetYFactor: 0.72 },
+  half: { distanceFactor: 0.82, targetYFactor: 0.76 },
+  closeup: { distanceFactor: 0.46, targetYFactor: 0.9 },
 }
 
 export const AZIMUTHS: Record<AzimuthKind, number> = {

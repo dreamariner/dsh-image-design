@@ -103,12 +103,17 @@ export async function listRefs(outDir: string, limit = 100): Promise<RefSummary[
     if (record !== null) records.push(record)
   }
   records.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-  return records.slice(0, limit).map((r) => ({
-    id: r.id,
-    createdAt: r.createdAt,
-    poseId: r.poseId,
-    file: r.images[0]?.file ?? '',
-  }))
+  return records.slice(0, limit).map((r) => {
+    const file = r.images[0]?.file ?? ''
+    return {
+      id: r.id,
+      createdAt: r.createdAt,
+      poseId: r.poseId,
+      file,
+      // 落盘绝对路径：历史参考图跨会话也能直接当生成参考图用，不必重拍
+      absPath: file === '' ? '' : join(refDirOf(outDir, r.id), file),
+    }
+  })
 }
 
 /** 读参考图字节（base64）。allowlist：file 必须在清单 images[].file 里。 */

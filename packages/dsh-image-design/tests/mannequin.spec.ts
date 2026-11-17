@@ -92,6 +92,13 @@ describe('参考图存档', () => {
     expect(refs[0].poseId).toBe('sit')
   })
 
+  it('listRefs 带落盘绝对路径（历史参考图跨会话可直接当生成参考图）', async () => {
+    const saved = await saveRefShot(deps(), shot())
+    const refs = await listRefs(outDir)
+    expect(refs[0].absPath).toBe(join(outDir, 'refs', saved.refId, saved.file))
+    expect(existsSync(refs[0].absPath)).toBe(true)
+  })
+
   it('readRefImage 走清单 allowlist，路径分隔符与未列文件拒绝', async () => {
     const r = await saveRefShot(deps(), shot())
     const img = await readRefImage(outDir, r.refId, r.file)

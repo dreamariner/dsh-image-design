@@ -143,12 +143,14 @@ export interface RefShotRecord {
   note?: string
 }
 
-/** 参考图历史列表项（瘦身版）。 */
+/** 参考图历史列表项（瘦身版；absPath 供客户端直接填进生成的参考图清单）。 */
 export interface RefSummary {
   id: string
   createdAt: string
   poseId: string
   file: string
+  /** 落盘绝对路径（客户端「用作生成参考图」直接用，不必依赖当次会话缓存）。 */
+  absPath: string
 }
 
 /** 拍摄入参（wire 面；dataUrl 严格校验在宿主侧）。 */

@@ -20,6 +20,7 @@ export function buildStudio(): Studio {
   scene.background = new THREE.Color(BG)
 
   // 三点柔光：主光（右前上）+ 补光（左前，弱）+ 逆光（背后，勾轮廓）
+  // ⚠ 前 = +z（Xbot 面朝 +z）：主光与补光放 +z 侧照正面，逆光放 -z 侧勾轮廓
   const key = new THREE.DirectionalLight(0xffffff, 2.4)
   key.position.set(2.2, 3.2, 2.6)
   key.castShadow = true

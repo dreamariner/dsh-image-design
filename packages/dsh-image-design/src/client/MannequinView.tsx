@@ -48,7 +48,7 @@ export function MannequinView({ api }: { api: ImageDesignApi }): ReactNode {
   const orbitRef = useRef(man.orbit)
   orbitRef.current = man.orbit
 
-  // 懒挂载：本视图挂载即建 WebGL 上下文，卸载即释放
+  // 懒挂载：本视图挂载即建 WebGL 上下文，卸载即释放；GLB 异步解码后进入可拍状态
   useEffect(() => {
     if (containerRef.current === null || viewerRef.current !== null) return
     const cur = getState().man
@@ -57,6 +57,9 @@ export function MannequinView({ api }: { api: ImageDesignApi }): ReactNode {
     })
     viewerRef.current = viewer
     viewer.setPose(POSES.find((p) => p.id === cur.poseId)?.joints ?? {})
+    viewer.ready
+      .then(() => { patchMan({ modelReady: true }) })
+      .catch((e) => { setState({ error: e instanceof Error ? e.message : String(e) }) })
     return () => {
       viewer.dispose()
       viewerRef.current = null
@@ -128,11 +131,12 @@ export function MannequinView({ api }: { api: ImageDesignApi }): ReactNode {
   }
 
   const useAsReference = (r: RefSummaryView): void => {
-    // 闭环：拍摄时缓存的落盘绝对路径 → 生成表单的 H3 参考图列表，并切回生成视图。
-    // 只限本会话内拍摄的参考图（absPath 在拍摄响应里；历史档只有相对名）。
+    // 闭环：参考图的落盘绝对路径 → 生成表单的 H3 参考图列表，并切回生成视图。
+    // 优先用 host 列表给的 absPath（历史档跨会话也能用），回退到本会话拍摄缓存。
     try {
-      const absPath = getState().man.refAbsPaths[r.id]
-      if (absPath === undefined) throw new Error('该参考图不是本会话拍摄的，请重新拍摄后使用')
+      const cached = getState().man.refAbsPaths[r.id]
+      const absPath = r.absPath !== '' ? r.absPath : cached
+      if (absPath === undefined || absPath === '') throw new Error('该参考图缺少落盘路径，请重新拍摄后使用')
       const form = getState().form
       const refs = form.refImages.includes(absPath) ? form.refImages : [...form.refImages, absPath].slice(0, 16)
       patchForm({ model: 'MiniMax-H3-Image', refImages: refs })
@@ -250,8 +254,8 @@ export function MannequinView({ api }: { api: ImageDesignApi }): ReactNode {
             onChange={(e) => { patchMan({ ratio: e.target.value as CaptureRatio }) }}
             options={CAPTURE_RATIOS.map((r) => ({ value: r, label: r }))}
           />
-          <Button variant="primary" disabled={man.capturing} onClick={() => { void doCapture() }}>
-            {man.capturing ? '拍摄中…' : '拍摄'}
+          <Button variant="primary" disabled={man.capturing || !man.modelReady} onClick={() => { void doCapture() }}>
+            {man.capturing ? '拍摄中…' : man.modelReady ? '拍摄' : '加载素体…'}
           </Button>
         </div>
 

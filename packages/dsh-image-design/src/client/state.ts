@@ -55,6 +55,8 @@ export interface MannequinState {
   length: CaptureLength
   ratio: CaptureRatio
   capturing: boolean
+  /** 素体 GLB 异步加载完成（加载中禁拍）。 */
+  modelReady: boolean
   refs: RefSummaryView[]
   refsLoading: boolean
   /** `${refId}/${file}` → blob URL。 */
@@ -136,6 +138,7 @@ function initialState(): ClientState {
       length: 1024,
       ratio: '2:3',
       capturing: false,
+      modelReady: false,
       refs: [],
       refsLoading: false,
       refUrls: {},

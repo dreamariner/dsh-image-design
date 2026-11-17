@@ -4,7 +4,7 @@
 
 ## 项目定位
 
-@dreamariner/dsh-image-design：**图片设计**，用 MiniMax 图片模型（image-01 / MiniMax-H3-Image）生成图片的 DSH 插件，能力对齐 mmx CLI 的 `image generate`；另带**素体设计**（three.js 参数化 3D 人物素体，调体型 / 姿势 / 机位拍参考图，一键进 H3 参考图闭环）。host 半边经 mmx 子进程生成并落盘归档；client 半边提供参数设置、结果画廊与对比、历史回看。由 create-dsh-plugin 生成，形态：**host + client 双端**。
+@dreamariner/dsh-image-design：**图片设计**，用 MiniMax 图片模型（image-01 / MiniMax-H3-Image）生成图片的 DSH 插件，能力对齐 mmx CLI 的 `image generate`；另带**素体设计**（three.js 蒙皮人偶，调体型 / 姿势 / 机位拍参考图，一键进 H3 参考图闭环）。host 半边经 mmx 子进程生成并落盘归档；client 半边提供参数设置、结果画廊与对比、历史回看。由 create-dsh-plugin 生成，形态：**host + client 双端**。
 
 ## 文档机制
 
@@ -14,7 +14,7 @@
 ## 目录结构
 
 ```
-├── packages/dsh-image-design/     # 插件包（src / tests / locale / icon.svg / cordis.patch.yml）
+├── packages/dsh-image-design/     # 插件包（src / tests / locale / assets / icon.svg / cordis.patch.yml）
 ├── packages/protocol/          # typert 协议声明源 submodule（pinned vendor，勿改内容）
 ├── scripts/                    # 项目共用：profile-add / dev-hmr / sync-pack-docs / lib/manifest-deps
 │                               # （full 另有 ensure-protocol）
@@ -40,13 +40,38 @@
 2. **读图链路**（client 展示）：face `readImage(runId, file)` 只认该轮 `run.json`
    `images[].file` allowlist（防路径越界）→ base64 → client 转 blob URL（`urls` 缓存）。
 3. **历史链路**：`listRuns` 只认有 `run.json` 的目录；删除 = 移除整个运行目录。
-4. **素体参考图链路**（issue 003）：client `mannequin/`（body.ts 体型→几何，三围 girth≈2πr
-   映射 LatheGeometry 轮廓；poses.ts 8 姿势 = 关节欧拉角表；camera.ts 景别×方位×俯仰预设；
-   capture.ts 影棚 + 离屏导出；viewer.ts 场景装配 + 轨道交互）→ wire `saveRefShot`
-   （dataUrl 严格校验）→ `src/mannequin-handlers.ts` 落盘 `<outDir>/refs/<refId>/`
-   （ref_001.png + ref.json 钉死体型/关节表/相机）；读图 `readRefImage` 只认该参考图
-   清单 allowlist。拍摄响应带 absPath，client 缓存进 `man.refAbsPaths`，「用作参考图」
-   把 absPath 追加进生成表单的 H3 refImages 并切回生成视图。
+4. **素体参考图链路**（issue 003）：client `mannequin/`（body.ts 体型参数面 + 参数→骨骼缩放
+   映射；rig.ts 16 关节↔mixamorig 骨映射 + 落臂补偿 + 世界系级联姿势合成；poses.ts 8 姿势 =
+   关节欧拉角表；camera.ts 景别×方位×俯仰预设；capture.ts 影棚 + 离屏导出；viewer.ts GLB 加载
+   + 骨架绑定 + 轨道交互）→ wire `saveRefShot`（dataUrl 严格校验）→ `src/mannequin-handlers.ts`
+   落盘 `<outDir>/refs/<refId>/`（ref_001.png + ref.json 钉死体型/关节表/相机）；读图
+   `readRefImage` 只认该参考图清单 allowlist。`listRefs` 带 absPath（历史参考图跨会话可复用），
+   「用作参考图」把 absPath 追加进生成表单的 H3 refImages 并切回生成视图。
+
+## 素体资产与骨架纪律（改素体前先读）
+
+- **模型是真人比例的蒙皮人偶**，不是程序化几何：Mixamo X Bot（Adobe Mixamo 免版税角色，
+  three.js examples 分发），`assets/xbot.glb` 经 `scripts/fix-quantized-glb.mjs` 反量化 →
+  `scripts/generate-mannequin-glb.mjs` 内联成 base64（`src/client/generated/mannequin-glb.ts`，
+  构建期自动跑）。
+- **不许再量化**：three 的 GLTFLoader 只按 `v / 32767` 解读量化属性、丢掉 accessor 的
+  min/max，几何会被压成单位立方体。gltf-transform 的 `optimize()` 会重新量化，禁用在
+  反量化之后。
+- **不许动节点层级与 scale**：Mixamo 的网格几何是米级、骨架是厘米级，靠 Armature 节点的
+  0.01 与 skin 的 inverseBindMatrices（厘米空间）配对，蒙皮时自动抵消。改层级 / 补 scale /
+  解挂网格都会破坏配对（实测躯干塌陷）。
+- **方向事实**：模型前方 = +z（实测脚尖方向），正面机位在 +z，影棚主光与补光也在 +z 侧。
+- **手性**：姿势表 z 分量语义是「向外展开」（左 + / 右 −），Mixamo 角色左在世界系的方向
+  随模型朝向而变，故按左肩世界 X 位置统一乘 `zSign`（rig.ts）。手性判错会让右臂收进躯干。
+- **落臂补偿按实测**：骨轴 = 子骨世界位置 − 本骨世界位置（本地 +X/+Y 约定不可靠），
+  再转到竖直向下 + 轻微外张。
+- **级联公式**：新本地旋转 = 姿势欧拉 ∘ 落臂补偿 ∘ rest 本地旋转（用 rest **本地**旋转，
+  不用世界旋转，否则子骨不跟随父骨，落臂时前臂留在水平）。
+- **glTF 节点默认 `matrixAutoUpdate = false`**：改骨骼的 quaternion / scale 前必须改回 true
+  并 `updateMatrix()`，否则蒙皮纹丝不动。
+- 改姿势或资产的每一步都要**定量验证**（骨轴方向、关节世界位置、朝向），别靠截图猜：
+  开发期探针 `scripts/glb-skeleton.mjs` / `scripts/glb-bone-axes.mjs` / `scripts/rig-repro.mjs`，
+  实机 `window.__mannequinDebug` 出口（卸载时自动清）。
 
 计费红线（mmx-h3-image skill 实证）：接口非幂等，无任何自动重试；客户端超时 ≥ 600 秒；
 `signal` 只拦「尚未发出」段，已发出的生成不响应取消，结果照常进历史。

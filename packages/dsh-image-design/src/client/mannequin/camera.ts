@@ -53,7 +53,10 @@ const deg2rad = (d: number): number => (d * Math.PI) / 180
 
 /**
  * 位姿计算：景别给基准距离与注视点，orbit 覆盖角度与距离缩放。
- * 球坐标绕注视点转：方位角绕 y 轴（0 = +z 正面），仰角抬相机高度。
+ * 球坐标绕注视点转：方位角绕 y 轴（0 = 正面），仰角抬相机高度。
+ *
+ * ⚠ 正面方位 = 相机在 **+z**：Xbot 角色的前方是 +z（实测脚尖方向 +z、跑姿膝盖
+ *   前伸 +z），正面机位必须站到角色面朝的一侧，否则拍到背面（2026-11-17 实机事故）。
  */
 export function computeCameraPose(shot: ShotKind, orbit: OrbitState, bodyHeightM: number): CameraPose {
   const preset = SHOTS[shot]

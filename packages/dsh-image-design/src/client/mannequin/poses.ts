@@ -56,7 +56,7 @@ const POSE_LIST: PoseDef[] = [
   { id: 't-pose', title: 'T-pose（基准）', joints: { ...zero(), shoulderL: { x: 0, y: 0, z: Math.PI / 2 }, shoulderR: { x: 0, y: 0, z: -Math.PI / 2 } } },
   {
     id: 'a-pose', title: 'A-pose（自然下垂基准）',
-    joints: { ...zero(), shoulderL: { x: 0, y: 0.08, z: 0.95 }, shoulderR: { x: 0, y: -0.08, z: -0.95 }, elbowL: { x: -0.12, y: 0, z: 0.1 }, elbowR: { x: -0.12, y: 0, z: -0.1 } },
+    joints: { ...zero(), shoulderL: { x: 0, y: 0.06, z: 0.55 }, shoulderR: { x: 0, y: -0.06, z: -0.55 }, elbowL: { x: -0.1, y: 0, z: 0.08 }, elbowR: { x: -0.1, y: 0, z: -0.08 } },
   },
   { id: 'stand', title: '自然站立', joints: mirror({ ...zero(), shoulderL: { x: 0.05, y: 0.06, z: 0.14 }, elbowL: { x: -0.18, y: 0, z: 0.05 } }) },
   {

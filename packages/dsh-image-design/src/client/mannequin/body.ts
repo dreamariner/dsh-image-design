@@ -1,12 +1,18 @@
 // 体型参数面 + 参数 → 形变指令。
 //
 // 人偶是**真实人体网格 + 自建骨架**（MakeHuman base.obj → 骨架 → 蒙皮，见
-// scripts/build-mannequin-body.mjs）。体型参数分两类落地方式：
+// scripts/build-mannequin-body.mjs）。体型参数分三类落地方式：
 //
-//   1) 网格形变（绑定姿态 LBS 混合）：围度类（胸 / 腰 / 臀 / 肩宽 / 四肢粗细 / 头身比）
-//      必须走网格形变 —— 只缩放脊柱那几根骨，躯干蒙皮权重是跨骨平滑过渡的，
-//      肉眼看不出围度变化（这是上一版滑杆「形同虚设」的根因）。
-//   2) 骨链长度（臂长 / 腿长）：缩放骨与子骨之间的位移，关节跟着走，长度真的变。
+//   1) 躯干围度（胸 / 腰 / 臀 / 肩宽）→ **沿身体轴的 1D 剖面**（见 shape.ts）：
+//      一串控制点（骨盆 / 腰 / 肋 / 胸 / 肩）各自被一个滑杆控制，点间平滑插值。
+//      为什么不用「高度带区域场」：相邻区域带必然重叠，胸围一大就把腰围带跑
+//      （上一版实测：胸围 0.6→1.6 腰宽从 0.341 涨到 0.387）；剖面是单值函数，
+//      腰的控制点只由腰滑杆决定，互不干扰。
+//   2) 四肢粗细 / 头身比 → **骨骼胶囊场 + 蒙皮权重软遮罩**（见 shape.ts）：
+//      空间场决定「作用范围」，蒙皮权重决定「归属哪根骨」，两者相乘。
+//      为什么不能用「主导骨」硬判定：跨过主导骨边界会出现硬边（实测：臀围调大
+//      在髋部甩出一圈裙状法兰）。
+//   3) 臂长 / 腿长 → 缩放骨与子骨之间的位移，关节跟着走，长度真的变。
 //
 // 身高走外层整体缩放（holder.scale），与骨架无关。
 
@@ -76,99 +82,97 @@ export const BONE = {
   spine3: 'mixamorigSpine3',
   neck: 'mixamorigNeck',
   head: 'mixamorigHead',
+  headTop: 'mixamorigHeadTop',
   clavicleL: 'mixamorigLeftShoulder',
   armL: 'mixamorigLeftArm',
   foreArmL: 'mixamorigLeftForeArm',
   handL: 'mixamorigLeftHand',
+  handEndL: 'mixamorigLeftHandEnd',
   clavicleR: 'mixamorigRightShoulder',
   armR: 'mixamorigRightArm',
   foreArmR: 'mixamorigRightForeArm',
   handR: 'mixamorigRightHand',
+  handEndR: 'mixamorigRightHandEnd',
   upLegL: 'mixamorigLeftUpLeg',
   legL: 'mixamorigLeftLeg',
   footL: 'mixamorigLeftFoot',
+  toeL: 'mixamorigLeftToeBase',
   upLegR: 'mixamorigRightUpLeg',
   legR: 'mixamorigRightLeg',
   footR: 'mixamorigRightFoot',
+  toeR: 'mixamorigRightToeBase',
 } as const
 
-/** 形变模式：
- *  · `region` —— **区域场形变**（围度类用它）：在骨心附近按高度做平滑权重，直接改
- *    顶点。只作用于「主导骨」是该骨的顶点（躯干骨），所以手臂腿不会被误改。
- *    为什么不用骨级缩放：躯干是跨骨平滑蒙皮的（胸腔同时吃 spine / spine1 / spine2），
- *    单根骨的缩放会被权重稀释，围度几乎看不出来（上一版「滑杆形同虚设」的根因）。
- *  · `radial` —— 垂直骨轴的均匀放大（四肢粗细用它，不挪关节位置）
- *  · `uniform`—— 各向同性（头身比用它）
- *  · `axis`   —— 绕骨心的世界轴向缩放（锁骨横向撑开用）
+/**
+ * 形变组：每一组 = 「空间场 × 蒙皮权重遮罩」× 一个变换。
+ * 组名即解剖部位，形状定义在 shape.ts 里（参数只给系数）。
  */
-export type ShapeMode = 'region' | 'axis' | 'radial' | 'uniform'
+export type ShapeGroup =
+  | 'torso'
+  | 'bust'
+  | 'head'
+  | 'armL' | 'armR'
+  | 'legL' | 'legR'
 
 export interface ShapeTune {
-  /** 提供形变中心（骨心）与作用范围（躯干骨集合）。 */
-  bone: string
-  mode: ShapeMode
-  /** region：世界 x/z 缩放；axis：世界 x/y/z 缩放；radial / uniform：只用 [0]。 */
-  scale: [number, number, number]
-  /** region 模式的半高（m）：中心权重 1，向外平滑衰减到 0。 */
-  height?: number
+  /** 形变组。 */
+  group: ShapeGroup
+  /** 组内缩放系数：torso = [臀, 腰, 胸, 肩]；其余 = [主系数]。 */
+  scale: number[]
 }
 
 const clamp1 = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v))
 
-/** 围度类系数 → 缩放系数（1 = 不变；往 1.5 走是「更粗」）。 */
-const girth = (k: number, depth: number): number => 1 + (clamp1(k, 0.5, 2) - 1) * depth
-
-/** 躯干骨集合（区域形变只作用于这些骨主导的顶点，避免误改手臂腿）。 */
+/** 躯干骨集合（躯干剖面只作用于这些骨主导的表面 + 大腿根，避免髋部断层）。 */
 export const TORSO_BONES: readonly string[] = [
   BONE.hips, BONE.spine, BONE.spine1, BONE.spine2, BONE.spine3,
 ]
 
 /**
- * 体型参数 → 网格形变指令表。
+ * 体型参数 → 形变指令表。
  *
- * 围度用「区域场」：在胸 / 腰 / 臀各自的高度带上做平滑缩放（绕身体中线），
- * 肩用锁骨横向撑开，四肢用垂直骨轴放大，头用各向同性。
+ * · torso（躯干剖面）：[臀, 腰, 胸, 肩] 四个系数，控制剖面的四个控制点。
+ * · bust（胸廓双峰）：胸围的局部隆起（底网格是中性体型，纯缩胸腔只是「变厚」）。
+ * · head：头身比（各向同性缩放）。
+ * · 四肢组：垂直骨轴的径向放大（不挪关节）。
  */
 export function shapeTunes(params: BodyParams): ShapeTune[] {
   const headK = 7.5 / clamp1(params.headRatio, 5, 10)
   const limb = clamp1(params.limbThickness, 0.4, 2)
   const shoulder = clamp1(params.shoulderWidth, 0.6, 1.6)
-  const bust = girth(params.bust, 1)
-  const waist = girth(params.waist, 1)
-  const hip = girth(params.hip, 1)
+  const bust = clamp1(params.bust, 0.5, 2)
+  const waist = clamp1(params.waist, 0.5, 2)
+  const hip = clamp1(params.hip, 0.5, 2)
   return [
-    { bone: BONE.head, mode: 'uniform', scale: [headK, headK, headK] },
-    // 肩：锁骨横向撑开（肩部随之变宽）
-    { bone: BONE.clavicleL, mode: 'axis', scale: [shoulder, 1, 1] },
-    { bone: BONE.clavicleR, mode: 'axis', scale: [shoulder, 1, 1] },
-    // 胸 / 腰 / 臀：躯干高度带上的区域场（绕身体中线缩放 x/z）
-    // 胸：横向全强度、纵深半强度（纵深全强度会把肋骨推成「肚子」）
-    { bone: BONE.spine2, mode: 'region', scale: [bust, 1, 1 + (bust - 1) * 0.45], height: 0.12 },
-    { bone: BONE.spine1, mode: 'region', scale: [waist, 1, waist], height: 0.075 },
-    { bone: BONE.hips, mode: 'region', scale: [hip, 1, hip], height: 0.1 },
-    // 四肢：垂直骨轴均匀放大
-    { bone: BONE.armL, mode: 'radial', scale: [limb, limb, limb] },
-    { bone: BONE.foreArmL, mode: 'radial', scale: [limb, limb, limb] },
-    { bone: BONE.armR, mode: 'radial', scale: [limb, limb, limb] },
-    { bone: BONE.foreArmR, mode: 'radial', scale: [limb, limb, limb] },
-    { bone: BONE.upLegL, mode: 'radial', scale: [limb, limb, limb] },
-    { bone: BONE.legL, mode: 'radial', scale: [limb, limb, limb] },
-    { bone: BONE.upLegR, mode: 'radial', scale: [limb, limb, limb] },
-    { bone: BONE.legR, mode: 'radial', scale: [limb, limb, limb] },
+    { group: 'torso', scale: [hip, waist, bust, shoulder] },
+    { group: 'bust', scale: [bust] },
+    { group: 'head', scale: [headK] },
+    // 四肢：整条链一次径向放大（分骨做会在关节处叠加出「护膝」）
+    { group: 'armL', scale: [limb] },
+    { group: 'armR', scale: [limb] },
+    { group: 'legL', scale: [limb] },
+    { group: 'legR', scale: [limb] },
   ]
 }
 
 /**
  * 肩宽 → 上臂关节的外移量（骨局部位移；手臂整条跟着外移）。
- * 返回「骨名 → 局部位移增量」。
+ *
+ * 上臂骨相对锁骨骨的横向偏移就是「半个肩宽」，按系数缩放它 = 肩膀真的变宽
+ * （而不是把躯干横向拉宽）。
  */
 export function positionTunes(params: BodyParams): Record<string, [number, number, number]> {
-  const shift = (clamp1(params.shoulderWidth, 0.6, 1.6) - 1) * 0.06
+  const shoulder = clamp1(params.shoulderWidth, 0.6, 1.6)
+  // 上臂骨的横向偏移（绑定姿态实测值 0.1411 m）
+  const shift = SHOULDER_OFFSET_X * (shoulder - 1)
   return {
     [BONE.armL]: [shift, 0, 0],
     [BONE.armR]: [-shift, 0, 0],
   }
 }
+
+/** 上臂骨相对锁骨骨的横向偏移（m，绑定姿态实测）。 */
+export const SHOULDER_OFFSET_X = 0.1411
 
 /**
  * 臂长 / 腿长 → 骨链长度系数。

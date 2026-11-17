@@ -80,9 +80,12 @@ profile `package.json` 的 `dsh.profile.bundles`（DSH 只认这份名单，裸 
   componentType 必须一致），three.js 读出来蒙皮索引全是顶点坐标，模型直接散架。构建脚本用
   `VertexLayout.SEPARATE` 分视图，`tests/mannequin-asset.spec.ts` 守着这条。
 - **体型参数怎么落地**：躯干是**跨骨平滑蒙皮**的，只缩放脊柱那几根骨围度几乎看不出来
-  （「滑杆形同虚设」的根因）。所以围度类（胸 / 腰 / 臀 / 肩宽）走**区域场网格形变**：
-  在躯干高度带上按平滑权重直接缩放顶点（只作用于主导骨是躯干骨的顶点，手臂腿不受影响）；
-  四肢粗细走**垂直骨轴**放大（关节位置不动）；臂长 / 腿长走**骨链局部位移缩放**（关节跟着走）。
+  （「滑杆形同虚设」的根因）。所以体型一律改**顶点 / 骨链**：
+  - 围度类（胸 / 腰 / 臀 / 肩宽）走**沿身体轴的 1D 剖面**：一串控制点（骨盆 / 胯腰 / 腰 / 肋 /
+    胸 / 肩），每个滑杆只管自己的控制点，点间单调三次插值，胸动不了腰，腰动不了臀；
+  - 区域限定用**蒙皮权重软遮罩**（按顶点最大骨权重归一），边界处处连续，不会在髋部留硬边；
+  - 四肢粗细走**整条肢体链一次径向放大**（关节位置不动，关节处不叠出「护膝」）；
+  - 肩宽走上臂骨的横向偏移；臂长 / 腿长走**骨链局部位移缩放**（关节跟着走，长度真的变）。
 - **骨架语义**：28 根骨，局部旋转全是单位阵 → 骨的朝向就是世界朝向，姿势欧拉按世界轴书写；
   绑定姿态就是 A-pose（手臂自然下垂约 40°），所以不需要「落臂补偿」。角色左 = +x，面朝 +z。
 - **开发期离线验姿势**：`scripts/preview-body.mjs` 在 Node 里读 GLB 做蒙皮 + 软件光栅出 PNG
@@ -175,8 +178,8 @@ src/client/ImageDesignIcon.tsx 清单条目图标（读生成的 icon-art，data
 src/client/generated/icon-art.ts 图标美术生成物（由 icon.svg 生成，勿手改）
 src/client/App.tsx   面板本体（表单 / 画廊 / 对比浮层 / 历史视图）
 src/client/MannequinView.tsx 素体视图（视口 + 体型滑杆 / 姿势 / 机位 / 拍摄 / 参考图列表）
-src/client/mannequin/body.ts  体型参数面 + 参数→形变指令（区域场 / 骨轴 / 骨链长度）
-src/client/mannequin/shape.ts 网格形变（绑定姿态 LBS 混合 + 区域场 + 胸廓双峰）
+src/client/mannequin/body.ts  体型参数面 + 参数→形变指令（围度剖面 / 肢体链 / 骨链长度）
+src/client/mannequin/shape.ts 网格形变（1D 围度剖面 + 软遮罩空间场 + 胸廓双峰）
 src/client/mannequin/rig.ts   骨架装配层（关节↔骨名映射、世界系级联姿势合成）
 src/client/mannequin/poses.ts 姿势库（8 种，关节欧拉角表）
 src/client/mannequin/camera.ts 景别 × 方位 × 俯仰机位预设

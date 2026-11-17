@@ -117,14 +117,22 @@ export function createViewer(
       bone.updateMatrix()
     }
     binding.bones.forEach((bone) => { bone.updateWorldMatrix(true, false) })
-    // 4) 落地 + 整体缩放到目标身高（先在单位缩放下量）
+    // 4) 落地 + 整体缩放到目标身高
+    //    ⚠ 身高要按**姿势无关**的静止位姿量：直接用骨的世界矩阵的话，弯腰时
+    //    头顶会变低，模型会跟着姿势忽大忽小。
     holder.scale.setScalar(1)
     holder.position.set(0, 0, 0)
-    binding.bones.forEach((bone) => { bone.updateWorldMatrix(true, false) })
-    const toe = binding.byName.get(BONE.footL.replace('Foot', 'ToeBase'))
-    const headTop = binding.byName.get('mixamorigHeadTop')
-    const footY = toe !== undefined ? toe.getWorldPosition(new THREE.Vector3()).y - SOLE_DROP : 0
-    const headY = headTop !== undefined ? headTop.getWorldPosition(new THREE.Vector3()).y : baseHeightM
+    const rest = tunedRestWorld(binding, currentBody)
+    const toe = rest.get(BONE.toeL)
+    const headTop = rest.get(BONE.headTop)
+    const head = rest.get(BONE.head)
+    const footY = toe !== undefined ? toe.y - SOLE_DROP : 0
+    let headY = headTop?.y ?? baseHeightM
+    if (head !== undefined && headTop !== undefined) {
+      // 头身比会等比放大头骨，颅顶也跟着长
+      const headK = 7.5 / clamp(currentBody.headRatio, 5, 10)
+      headY = head.y + (headTop.y - head.y) * headK
+    }
     const localHeight = Math.max(0.5, headY - footY)
     const scale = (currentBody.height / 100) / localHeight
     holder.scale.setScalar(scale)
@@ -177,7 +185,7 @@ export function createViewer(
         }
         binding = bindRig(model)
 
-        // 形变上下文：绑定姿态顶点 + 蒙皮权重 + 骨心 / 骨轴
+        // 形变上下文：绑定姿态顶点 + 蒙皮权重 + 骨心
         const geom = skinMesh.geometry
         const posAttr = geom.getAttribute('position') as THREE.BufferAttribute
         const skinIndex = geom.getAttribute('skinIndex') as THREE.BufferAttribute
@@ -193,8 +201,6 @@ export function createViewer(
           weights: new Float32Array(skinWeight.array as Float32Array),
           boneIndex,
           boneWorld: binding.boneRest,
-          boneAxis: binding.boneAxis,
-          chestBone: BONE.spine2,
         }
 
         applyBody()
@@ -359,4 +365,34 @@ function clamp(v: number, lo: number, hi: number): number {
 
 function wrapDeg(d: number): number {
   return ((d % 360) + 360) % 360
+}
+
+/**
+ * 姿势无关的「调型后静止位姿」世界坐标（骨名 → 世界位置）。
+ *
+ * 为什么不能直接用骨的世界矩阵：那是**当前姿势**下的位置（弯腰时头顶会低），
+ * 拿来量身高会让模型随姿势忽大忽小。这里按「绑定姿态 + 骨链长度 / 肩宽位移」
+ * 自己算一遍。
+ */
+function tunedRestWorld(binding: RigBinding, params: BodyParams): Map<string, THREE.Vector3> {
+  const posTunes = positionTunes(params)
+  const lenTunes = lengthTunes(params)
+  const out = new Map<string, THREE.Vector3>()
+  const worldOf = (bone: THREE.Object3D): THREE.Vector3 => {
+    const cached = out.get(bone.name)
+    if (cached !== undefined) return cached
+    const rest = binding.boneRestLocal.get(bone.name) ?? bone.position.clone()
+    const local = rest.clone()
+    const delta = posTunes[bone.name]
+    if (delta !== undefined) local.set(local.x + delta[0], local.y + delta[1], local.z + delta[2])
+    const k = lenTunes[bone.name]
+    if (k !== undefined && local.lengthSq() > 1e-10) local.multiplyScalar(k)
+    const parent = bone.parent
+    const parentBone = parent !== null && binding.byName.has(parent.name) ? parent : null
+    const world = parentBone === null ? local.clone() : worldOf(parentBone).clone().add(local)
+    out.set(bone.name, world)
+    return world
+  }
+  for (const bone of binding.byName.values()) worldOf(bone)
+  return out
 }

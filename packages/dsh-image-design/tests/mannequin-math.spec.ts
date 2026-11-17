@@ -9,7 +9,7 @@ import * as THREE from 'three'
 import {
   DEFAULT_BODY, shapeTunes, lengthTunes, positionTunes, BONE, JOINT_NAMES, type BodyParams,
 } from '../src/client/mannequin/body.ts'
-import { applyShape, type ShapeContext } from '../src/client/mannequin/shape.ts'
+import { applyShape, profileAt, torsoProfile, type ShapeContext } from '../src/client/mannequin/shape.ts'
 import { POSES, poseJoints, normalizePose } from '../src/client/mannequin/poses.ts'
 import { JOINT_BONES, APPLY_ORDER, bindRig, applyRigPose } from '../src/client/mannequin/rig.ts'
 import { computeCameraPose, presetOrbit, SHOTS } from '../src/client/mannequin/camera.ts'
@@ -64,61 +64,35 @@ function boneAxis(binding: { bones: Map<string, THREE.Object3D> }, from: string,
 
 describe('体型 → 形变指令', () => {
   it('头身比越大头越小（7.5 为基准 1.0）', () => {
-    const head = shapeTunes(params()).find((t) => t.bone === BONE.head)
-    expect(head?.scale).toEqual([1, 1, 1])
-    const small = shapeTunes(params({ headRatio: 9 })).find((t) => t.bone === BONE.head)
-    expect(small?.mode).toBe('uniform')
-    expect(small?.scale?.[0]).toBeCloseTo(7.5 / 9, 8)
+    const head = shapeTunes(params()).find((t) => t.group === 'head')
+    expect(head?.scale[0]).toBeCloseTo(1, 8)
+    const small = shapeTunes(params({ headRatio: 9 })).find((t) => t.group === 'head')
+    expect(small?.scale[0]).toBeCloseTo(7.5 / 9, 8)
   })
 
-  it('腰围系数 → 腰骨的区域场缩放（绕中线缩 x/z，带高度衰减）', () => {
-    const slim = shapeTunes(params({ waist: 0.6 })).find((t) => t.bone === BONE.spine1)
-    expect(slim?.mode).toBe('region')
-    expect(slim?.scale?.[2]).toBeCloseTo(0.6, 8)
-    expect(slim?.scale?.[0]).toBeCloseTo(0.6, 8)
-    expect(slim?.height).toBeGreaterThan(0)
+  it('躯干组带四个围度系数（臀 / 腰 / 胸 / 肩）', () => {
+    const torso = shapeTunes(params({ hip: 1.3, waist: 0.8, bust: 1.2, shoulderWidth: 1.1 }))
+      .find((t) => t.group === 'torso')
+    expect(torso?.scale).toEqual([1.3, 0.8, 1.2, 1.1])
   })
 
-  it('肩宽 → 锁骨横向缩放（左右对称）', () => {
-    const tunes = shapeTunes(params({ shoulderWidth: 1.3 }))
-    const l = tunes.find((t) => t.bone === BONE.clavicleL)
-    const r = tunes.find((t) => t.bone === BONE.clavicleR)
-    expect(l?.scale?.[0]).toBeCloseTo(1.3, 8)
-    expect(r?.scale?.[0]).toBeCloseTo(1.3, 8)
+  it('四肢粗细 → 整条肢体链一个系数', () => {
+    const arm = shapeTunes(params({ limbThickness: 1.2 })).find((t) => t.group === 'armL')
+    const leg = shapeTunes(params({ limbThickness: 1.2 })).find((t) => t.group === 'legL')
+    expect(arm?.scale[0]).toBeCloseTo(1.2, 8)
+    expect(leg?.scale[0]).toBeCloseTo(1.2, 8)
   })
 
-  it('胸围 / 臀围 → 胸骨 / 骨盆的区域场缩放', () => {
-    const bust = shapeTunes(params({ bust: 1.4 })).find((t) => t.bone === BONE.spine2)
-    expect(bust?.mode).toBe('region')
-    expect(bust?.scale?.[0]).toBeCloseTo(1.4, 8)          // 横向全强度
-    expect(bust?.scale?.[2]).toBeCloseTo(1.18, 8)         // 纵深半强度（不把肋骨推成肚子）
-    const hip = shapeTunes(params({ hip: 1.3 })).find((t) => t.bone === BONE.hips)
-    expect(hip?.mode).toBe('region')
-    expect(hip?.scale?.[0]).toBeCloseTo(1.3, 8)
-  })
-
-  it('肩宽 → 锁骨横向缩放 + 上臂关节外移', () => {
-    const tunes = shapeTunes(params({ shoulderWidth: 1.3 }))
-    const l = tunes.find((t) => t.bone === BONE.clavicleL)
-    const r = tunes.find((t) => t.bone === BONE.clavicleR)
-    expect(l?.scale?.[0]).toBeCloseTo(1.3, 8)
-    expect(r?.scale?.[0]).toBeCloseTo(1.3, 8)
+  it('肩宽 → 上臂关节左右对称外移', () => {
     const pos = positionTunes(params({ shoulderWidth: 1.3 }))
     expect(pos[BONE.armL][0]).toBeGreaterThan(0)
     expect(pos[BONE.armR][0]).toBeLessThan(0)
     expect(Math.abs(pos[BONE.armL][0])).toBeCloseTo(Math.abs(pos[BONE.armR][0]), 8)
   })
 
-  it('四肢粗细 → 四肢骨的 radial 模式', () => {
-    const arm = shapeTunes(params({ limbThickness: 1.2 })).find((t) => t.bone === BONE.armL)
-    expect(arm?.mode).toBe('radial')
-    expect(arm?.scale?.[0]).toBeCloseTo(1.2, 8)
-  })
-
   it('默认体型全部归一（不产生任何形变）', () => {
     for (const tune of shapeTunes(params())) {
-      if (tune.mode === 'uniform' || tune.mode === 'radial') expect(tune.scale[0]).toBeCloseTo(1, 8)
-      else { expect(tune.scale[0]).toBeCloseTo(1, 8); expect(tune.scale[1]).toBeCloseTo(1, 8); expect(tune.scale[2]).toBeCloseTo(1, 8) }
+      for (const s of tune.scale) expect(s).toBeCloseTo(1, 8)
     }
   })
 
@@ -131,9 +105,48 @@ describe('体型 → 形变指令', () => {
   })
 })
 
-describe('网格形变（绑定姿态 LBS 混合）', () => {
-  /** 造一个 1 顶点、1 骨的最小几何，验证形变数学。 */
-  function oneVertex(px: number, py: number, pz: number): { geom: THREE.BufferGeometry; ctx: ShapeContext } {
+describe('躯干围度剖面（1D 剖面，互不串扰）', () => {
+  const at = (tune: { scale: number[] }, y: number): number => profileAt(torsoProfile(tune.scale), y)[0]
+
+  it('胸围只改胸那一段，腰围那一段不受影响', () => {
+    const bust = shapeTunes(params({ bust: 1.6 })).find((t) => t.group === 'torso')!
+    const plain = shapeTunes(params()).find((t) => t.group === 'torso')!
+    expect(at(bust, 1.21)).toBeGreaterThan(at(plain, 1.21) + 0.3)   // 胸明显变宽
+    expect(Math.abs(at(bust, 1.05) - at(plain, 1.05))).toBeLessThan(0.05) // 腰几乎不动
+  })
+
+  it('腰围只改腰那一段，胸那一段不受影响', () => {
+    const waist = shapeTunes(params({ waist: 0.6 })).find((t) => t.group === 'torso')!
+    const plain = shapeTunes(params()).find((t) => t.group === 'torso')!
+    expect(at(waist, 1.05)).toBeLessThan(at(plain, 1.05) - 0.2)
+    expect(Math.abs(at(waist, 1.21) - at(plain, 1.21))).toBeLessThan(0.05)
+  })
+
+  it('臀围改骨盆那一段，峰值比默认大', () => {
+    const hip = shapeTunes(params({ hip: 1.5 })).find((t) => t.group === 'torso')!
+    const plain = shapeTunes(params()).find((t) => t.group === 'torso')!
+    expect(at(hip, 0.90)).toBeGreaterThan(at(plain, 0.90) + 0.3)
+  })
+
+  it('剖面没有跳变（硬边会表现为相邻高度之间的大台阶）', () => {
+    // 臀围 1.5 时髋部到腰的过渡本来就陡（解剖上就该有胯腰差），
+    // 但不能出现「台阶」：相邻 5 mm 之间的突变要远小于任何硬边。
+    const hip = shapeTunes(params({ hip: 1.5 })).find((t) => t.group === 'torso')!
+    let maxStep = 0
+    for (let y = 0.68; y < 1.44; y += 0.005) {
+      maxStep = Math.max(maxStep, Math.abs(at(hip, y + 0.005) - at(hip, y)))
+    }
+    expect(maxStep).toBeLessThan(0.05)
+  })
+})
+
+describe('网格形变', () => {
+  /** 造一个最小几何 + 上下文：顶点挂在一根骨上。 */
+  function oneVertex(
+    px: number, py: number, pz: number,
+    bone = 'bone',
+    world = new THREE.Vector3(0, 0, 0),
+  ): { geom: THREE.BufferGeometry; ctx: ShapeContext } {
     const geom = new THREE.BufferGeometry()
     geom.setAttribute('position', new THREE.Float32BufferAttribute([px, py, pz], 3))
     geom.setAttribute('skinIndex', new THREE.Uint16BufferAttribute([0, 0, 0, 0], 4))
@@ -142,80 +155,59 @@ describe('网格形变（绑定姿态 LBS 混合）', () => {
       base: new Float32Array([px, py, pz]),
       joints: new Uint16Array([0, 0, 0, 0]),
       weights: new Float32Array([1, 0, 0, 0]),
-      boneIndex: new Map([['bone', 0]]),
-      boneWorld: new Map([['bone', new THREE.Vector3(0, 0, 0)]]),
-      boneAxis: new Map([['bone', new THREE.Vector3(0, 1, 0)]]),
-      chestBone: 'bone',
+      boneIndex: new Map([[bone, 0]]),
+      boneWorld: new Map([[bone, world]]),
     }
     return { geom, ctx }
   }
 
-  it('axis 模式：绕骨心缩放顶点', () => {
-    const { geom, ctx } = oneVertex(0.2, 0.1, 0)
-    // 锁骨 spine3 axis 缩放 1.5（x）
-    ctx.boneIndex.set(BONE.clavicleL, 0)
-    ctx.boneWorld.set(BONE.clavicleL, new THREE.Vector3(0, 0, 0))
-    applyShape(geom, ctx, params({ shoulderWidth: 1.5 }))
+  it('默认体型不改变任何顶点', () => {
+    const { geom, ctx } = oneVertex(0.2, 1.05, 0.05, BONE.spine1, new THREE.Vector3(0, 1.05, 0))
+    applyShape(geom, ctx, params())
     const p = geom.getAttribute('position')
-    expect(p.getX(0)).toBeCloseTo(0.3, 5)
-    expect(p.getZ(0)).toBeCloseTo(0, 5)
+    expect(p.getX(0)).toBeCloseTo(0.2, 6)
+    expect(p.getY(0)).toBeCloseTo(1.05, 6)
+    expect(p.getZ(0)).toBeCloseTo(0.05, 6)
   })
 
-  it('radial 模式：沿骨轴不变、垂直方向放大', () => {
-    const { geom, ctx } = oneVertex(0.1, 0.5, 0)
-    ctx.boneIndex.set(BONE.armL, 0)
-    ctx.boneWorld.set(BONE.armL, new THREE.Vector3(0, 0, 0))
-    ctx.boneAxis.set(BONE.armL, new THREE.Vector3(0, 1, 0))
-    applyShape(geom, ctx, params({ limbThickness: 1.5 }))
+  it('腰围：腰处的顶点左右收，腹部的顶点不动', () => {
+    const { geom, ctx } = oneVertex(0.2, 1.05, 0, BONE.spine1, new THREE.Vector3(0, 1.05, 0))
+    applyShape(geom, ctx, params({ waist: 0.5 }))
     const p = geom.getAttribute('position')
-    expect(p.getY(0)).toBeCloseTo(0.5, 5)   // 沿骨轴不动
-    expect(p.getX(0)).toBeCloseTo(0.15, 5)  // 垂直方向放大 1.5
+    expect(p.getX(0)).toBeCloseTo(0.1, 4)   // 腰收一半
+    expect(p.getY(0)).toBeCloseTo(1.05, 6)
   })
 
-  it('权重混合：多骨影响按权重插值', () => {
+  it('头身比：头的顶点绕头骨等比缩放', () => {
+    const { geom, ctx } = oneVertex(0, 1.6, 0, BONE.head, new THREE.Vector3(0, 1.5424, 0))
+    // 头的空间场要头骨与颅顶两根骨
+    ctx.boneWorld.set(BONE.headTop, new THREE.Vector3(0, 1.6853, 0))
+    applyShape(geom, ctx, params({ headRatio: 6 }))
+    const p = geom.getAttribute('position')
+    expect(p.getY(0)).toBeCloseTo(1.5424 + (1.6 - 1.5424) * 1.25, 4)
+  })
+
+  it('蒙皮权重软：权重只有 0.4 的顶点也要吃满力度（遮罩按主导骨归一）', () => {
     const geom = new THREE.BufferGeometry()
-    geom.setAttribute('position', new THREE.Float32BufferAttribute([0.2, 0, 0], 3))
+    geom.setAttribute('position', new THREE.Float32BufferAttribute([0.2, 1.05, 0], 3))
     geom.setAttribute('skinIndex', new THREE.Uint16BufferAttribute([0, 1, 0, 0], 4))
-    geom.setAttribute('skinWeight', new THREE.Float32BufferAttribute([0.5, 0.5, 0, 0], 4))
+    geom.setAttribute('skinWeight', new THREE.Float32BufferAttribute([0.4, 0.6, 0, 0], 4))
     const ctx: ShapeContext = {
-      base: new Float32Array([0.2, 0, 0]),
+      base: new Float32Array([0.2, 1.05, 0]),
       joints: new Uint16Array([0, 1, 0, 0]),
-      weights: new Float32Array([0.5, 0.5, 0, 0]),
-      boneIndex: new Map([[BONE.clavicleL, 0], [BONE.head, 1]]),
+      weights: new Float32Array([0.4, 0.6, 0, 0]),
+      boneIndex: new Map([[BONE.spine1, 0], [BONE.spine2, 1]]),
       boneWorld: new Map([
-        [BONE.clavicleL, new THREE.Vector3(0, 0, 0)],
-        [BONE.head, new THREE.Vector3(0, 0, 0)],
+        [BONE.spine1, new THREE.Vector3(0, 1.05, 0)],
+        [BONE.spine2, new THREE.Vector3(0, 1.12, 0)],
       ]),
-      boneAxis: new Map(),
-      chestBone: BONE.spine2,
     }
-    // 锁骨 ×1.5 与头骨 ×1.0 各占一半权重：x = 0.5·(0.2·1.5) + 0.5·(0.2·1.0) = 0.25
-    applyShape(geom, ctx, params({ shoulderWidth: 1.5 }))
+    applyShape(geom, ctx, params({ waist: 0.5 }))
     const p = geom.getAttribute('position')
-    expect(p.getX(0)).toBeCloseTo(0.25, 5)
-    expect(p.getZ(0)).toBeCloseTo(0, 5)
-  })
-
-  it('region 模式：躯干高度带内按权重缩放，band 外不动', () => {
-    const geom = new THREE.BufferGeometry()
-    // 两个顶点：y=1.1（胸骨带内）与 y=1.6（带外）
-    geom.setAttribute('position', new THREE.Float32BufferAttribute([0.2, 1.1, 0, 0.2, 1.6, 0], 3))
-    geom.setAttribute('skinIndex', new THREE.Uint16BufferAttribute([0, 0, 0, 0, 0, 0, 0, 0], 4))
-    geom.setAttribute('skinWeight', new THREE.Float32BufferAttribute([1, 0, 0, 0, 1, 0, 0, 0], 4))
-    const ctx: ShapeContext = {
-      base: new Float32Array([0.2, 1.1, 0, 0.2, 1.6, 0]),
-      joints: new Uint16Array([0, 0, 0, 0, 0, 0, 0, 0]),
-      weights: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0]),
-      boneIndex: new Map([[BONE.spine2, 0]]),
-      boneWorld: new Map([[BONE.spine2, new THREE.Vector3(0, 1.1, 0)]]),
-      boneAxis: new Map(),
-      chestBone: BONE.spine2,
-      torsoBones: [BONE.spine2],
-    }
-    applyShape(geom, ctx, params({ bust: 1.5 }))
-    const p = geom.getAttribute('position')
-    expect(p.getX(0)).toBeCloseTo(0.3, 4)   // 带内：缩放生效
-    expect(p.getX(1)).toBeCloseTo(0.2, 4)   // 带外：不动
+    // 躯干组遮罩 = 0.4（自身权重）/ 0.6（主导骨权重）= 0.67 → 不是吃满
+    // 但仍要明显收（不是 0.2 不动）
+    expect(p.getX(0)).toBeLessThan(0.19)
+    expect(p.getX(0)).toBeGreaterThan(0.1)
   })
 })
 

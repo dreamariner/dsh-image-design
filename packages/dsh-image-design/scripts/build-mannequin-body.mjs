@@ -12,7 +12,7 @@
 // 流程：
 //   1) 读 base.obj：只取 `body` 组的面（丢掉 helper-tights / 睫毛 / joint 辅助球）
 //   2) 读 `joint-*` 组球心 → 骨架关节点
-//   3) 建 27 根骨（平移静止姿态，局部旋转为单位阵）
+//   3) 建 28 根骨（平移静止姿态，局部旋转为单位阵）
 //   4) 顶点→骨段距离权重（取前 4 根归一化，再做一次邻域平滑）
 //   5) gltf-transform 写 GLB：POSITION / NORMAL / JOINTS_0 / WEIGHTS_0 + skin
 //

@@ -160,13 +160,16 @@ describe('姿势目标库：语义动作', () => {
     expect(next.effectors.footL?.pos!.z).toBeCloseTo(0.3, 6)
   })
 
-  it('手垂体侧：手落到体侧（含清空大腿的外张量）且指尖朝下', () => {
+  it('手垂体侧：手落到体侧（含清空大腿的外张量）且指尖顺臂线朝下', () => {
     const next = applySemanticAction('arms-at-side', base(), metrics)
     // hangingArm 带外张量（垂手要清空大腿，2026-11-18 网格实测指尖会插进大腿）
     expect(next.effectors.handL?.pos!.x).toBeCloseTo(metrics.shoulderHalf + 0.032, 6)
     expect(next.effectors.handR?.pos!.x).toBeCloseTo(-(metrics.shoulderHalf + 0.032), 6)
-    expect(next.effectors.handL?.forward).toEqual({ x: 0, y: -1, z: 0 })
-    expect(next.effectors.handR?.forward).toEqual({ x: 0, y: -1, z: 0 })
+    // 指尖沿「肩→手」臂线（2026-11-19：不写死朝地，摆臂/垂臂的腕才不折），
+    // 外张 0.032 的臂线带一点朝外分量，朝下为主
+    expect(next.effectors.handL?.forward!.y).toBeLessThan(-0.9)
+    expect(Math.abs(next.effectors.handL?.forward!.x)).toBeLessThan(0.15)
+    expect(next.effectors.handR?.forward!.y).toBeLessThan(-0.9)
   })
 
   it('语义动作后的姿势仍解得出来（落定 + 不穿模）', () => {

@@ -120,6 +120,20 @@ function hangingArm(m: BodyMetrics, side: 'L' | 'R', zOff = 0, drop = 0.94): Vec
   }
 }
 
+/** 垂手/摆臂手：位置 + 指尖沿「肩→手」臂线延伸。
+ *
+ * 为什么指尖跟臂线而不写死朝地（2026-11-19 实机）：写死 (0,−1,0) 时摆臂的
+ * 前臂指向前外、手背板被硬折 30~45° 指地 —— 实机腕上看就是「折断」（用户
+ * 截图圈的就是它）。指尖沿肩→手线 = 腕零折，像真人松垂的手 ✓。
+ * 构建期用绑定姿态的肩位算方向（确定性：同一目标同一 forward，无求解反馈）✓。 */
+function swingingHand(m: BodyMetrics, side: 'L' | 'R', zOff = 0, drop = 0.94): { pos: Vec3; forward: Vec3 } {
+  const pos = hangingArm(m, side, zOff, drop)
+  const sh = { x: (side === 'L' ? 1 : -1) * m.shoulderHalf, y: m.groundY + m.shoulderHeight, z: 0 }
+  const d = { x: pos.x - sh.x, y: pos.y - sh.y, z: pos.z - sh.z }
+  const len = Math.hypot(d.x, d.y, d.z)
+  return { pos, forward: { x: d.x / len, y: d.y / len, z: d.z / len } }
+}
+
 /** 垂手/摆臂的掌心朝向：朝内偏后 ~30°。
  *
  * 为什么不朝正内侧（2026-11-19 实测）：HM08 手指张开且微卷（朝掌心侧），
@@ -163,16 +177,11 @@ function stand(m: BodyMetrics): PoseTargets {
     root: { x: 0, y: m.hipsY, z: 0 },
     effectors: {
       ...standFeet(m),
-      handL: {
-        pos: hangingArm(m, 'L'),
-        forward: { x: 0, y: -1, z: 0 },
-        normal: hangingPalm('L'),
-      },
-      handR: {
-        pos: hangingArm(m, 'R'),
-        forward: { x: 0, y: -1, z: 0 },
-        normal: hangingPalm('R'),
-      },
+      // 指尖不写死朝地（2026-11-19 实机）：写死的世界方向会跟摆臂/垂臂的前臂
+      // 打架 —— run 前臂指向前外、手背板被硬折 30~45° 指地，腕上看就是「折断」。
+      // 指尖顺前臂延伸（缺省 foreDir）+ 掌心虎口朝前 = 真人松垂的手 ✓
+      handL: { ...swingingHand(m, 'L'), normal: hangingPalm('L') },
+      handR: { ...swingingHand(m, 'R'), normal: hangingPalm('R') },
     },
   }
 }
@@ -197,38 +206,42 @@ function walk(m: BodyMetrics): PoseTargets {
     effectors: {
       footL: { pos: { x: m.hipHalf, y: m.groundY + m.ankleHeight + 0.03, z: legLen * 0.3 }, pitchDeg: -9 },
       footR: { pos: { x: -m.hipHalf, y: m.groundY + m.ankleHeight + 0.13, z: -legLen * 0.26 }, pitchDeg: 29 },
-      handL: {
-        pos: hangingArm(m, 'L', -m.armLen * 0.06),
-        forward: { x: 0, y: -1, z: 0 },
-        normal: hangingPalm('L'),
-      },
-      handR: {
-        pos: hangingArm(m, 'R', m.armLen * 0.06),
-        forward: { x: 0, y: -1, z: 0 },
-        normal: hangingPalm('R'),
-      },
+      handL: { ...swingingHand(m, 'L', -m.armLen * 0.06), normal: hangingPalm('L') },
+      handR: { ...swingingHand(m, 'R', m.armLen * 0.06), normal: hangingPalm('R') },
     },
   }
 }
 
-/** 奔跑（触地）：左脚支撑、右腿后摆折叠，双臂大幅摆动。 */
+/**
+ * 奔跑（触地）：左脚支撑、右腿后摆折叠，双臂屈肘前后摆。
+ *
+ * 手部意图（2026-11-19 重设）：跑者手臂 = 肘屈 ~90°、手在腰/胸高度前后摆。
+ * 旧意图把手垂在髋边（臂长 77% 处）→ 链松弛让肘外翻折叠 76°、前臂与肩→腕线
+ * 差 67°，手背板相对前臂折 40°+（实机「折断的腕」）。屈肘意图下链紧张、肘位
+ * 由屈曲自然定，腕顺臂线无折 ✓。
+ */
 function run(m: BodyMetrics): PoseTargets {
   const legLen = m.thighLen + m.shinLen
+  const shY = m.groundY + m.shoulderHeight
+  // 前后摆的手位置 + 指尖沿肩→手线（构建期算好，确定性 ✓）
+  // 指尖不显式给（2026-11-19）：屈肘意图下指尖顺前臂延伸（foreDir 缺省），
+  // 腕零折；肘位由 poleHint 定。显式沿肩→手线会跟前臂折出 40°+ 的腕角 ✗
+  const armHand = (side: 'L' | 'R', sx: number, yDrop: number, z: number, hint: 'back' | 'out' | 'up') => {
+    const s = side === 'L' ? 1 : -1
+    const pos = { x: s * (m.shoulderHalf + sx), y: shY - m.armLen * yDrop, z }
+    return {
+      pos,
+      normal: hangingPalm(side),
+      poleHint: hint,
+    }
+  }
   return {
     root: { x: 0, y: m.hipsY - 0.02, z: 0 },
     effectors: {
       footL: { pos: { x: m.hipHalf, y: m.groundY + m.ankleHeight, z: legLen * 0.22 }, pitchDeg: 0 },
       footR: { pos: { x: -m.hipHalf, y: m.groundY + m.ankleHeight + legLen * 0.42, z: -legLen * 0.2 }, pitchDeg: 40 },
-      handL: {
-        pos: hangingArm(m, 'L', -m.armLen * 0.12, 0.9),
-        forward: { x: 0, y: -1, z: 0 },
-        normal: hangingPalm('L'),
-      },
-      handR: {
-        pos: hangingArm(m, 'R', m.armLen * 0.08, 0.77),
-        forward: { x: 0, y: -1, z: 0 },
-        normal: hangingPalm('R'),
-      },
+      handL: armHand('L', 0.10, 0.42, -m.armLen * 0.16, 'back'),
+      handR: armHand('R', 0.14, 0.32, m.armLen * 0.30, 'out'),
     },
   }
 }
@@ -352,16 +365,8 @@ export function applySemanticAction(
       break
     }
     case 'arms-at-side':
-      effectors.handL = {
-        pos: hangingArm(m, 'L'),
-        forward: { x: 0, y: -1, z: 0 },
-        normal: hangingPalm('L'),
-      }
-      effectors.handR = {
-        pos: hangingArm(m, 'R'),
-        forward: { x: 0, y: -1, z: 0 },
-        normal: hangingPalm('R'),
-      }
+      effectors.handL = { ...swingingHand(m, 'L'), normal: hangingPalm('L') }
+      effectors.handR = { ...swingingHand(m, 'R'), normal: hangingPalm('R') }
       break
   }
   return {

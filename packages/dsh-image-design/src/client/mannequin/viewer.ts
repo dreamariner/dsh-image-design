@@ -711,6 +711,7 @@ function createMeshGeometry(
   const bindPositions = new Float32Array(posAttr.array as Float32Array)
   const bindNormals = new Float32Array(norAttr.array as Float32Array)
   const dominant: string[] = new Array(posAttr.count)
+  const dominantW: number[] = new Array(posAttr.count)
   for (let i = 0; i < posAttr.count; i++) {
     let bw = 0
     let bj = 0
@@ -719,6 +720,7 @@ function createMeshGeometry(
       if (w > bw) { bw = w; bj = skinIndex.getComponent(i, k) }
     }
     dominant[i] = boneList[bj]?.name ?? ''
+    dominantW[i] = bw
   }
   const m = new THREE.Matrix4()
   const v = new THREE.Vector3()
@@ -751,6 +753,7 @@ function createMeshGeometry(
     bindPositions,
     bindNormals,
     dominantBone: (i: number) => dominant[i] ?? '',
+    dominantWeight: (i: number) => dominantW[i] ?? 0,
     applyPose: (joints, root, verts) => {
       const hips = binding.byName.get(BONE.hips)
       if (hips !== undefined) hips.position.set(root.x, root.y, root.z)

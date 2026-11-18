@@ -189,12 +189,15 @@ export class EllipsoidSegment {
    * 接触点就会浮空，手又变成「悬在大腿上方」。剖面按解剖 t 采样，随骨一起转。
    */
   private readonly profile?: (t: number) => { radiusU: number; radiusV: number }
+  /** 角向剖面（截面不是圆的肢体：大腿内前伸到 16cm、外侧只有 6cm）✓。 */
+  private readonly radial?: RadialProfile
 
   constructor(
     name: string, a: THREE.Vector3, b: THREE.Vector3,
     radiusU: number, radiusV: number,
     orientation?: THREE.Quaternion,
     profile?: (t: number) => { radiusU: number; radiusV: number },
+    radial?: RadialProfile,
   ) {
     this.name = name
     this.a = a
@@ -203,6 +206,7 @@ export class EllipsoidSegment {
     this.radiusV = radiusV
     this.orientation = orientation?.clone()
     this.profile = profile
+    this.radial = radial
   }
 
   /** 某轴向参数处的半轴半径（有剖面用剖面，否则用整段常数）。 */
@@ -241,6 +245,12 @@ export class EllipsoidSegment {
       const end = t < 0 ? this.a : this.b
       return p.distanceTo(end) - Math.min(this.radiusU, this.radiusV)
     }
+    if (this.radial !== undefined) {
+      // 角向剖面：查该截面角的表面半径，距离 = 查询径距 − 表面半径 ✓
+      const d = Math.hypot(relU, relV)
+      const surface = this.radial.at(t / len, Math.atan2(relV, relU))
+      return d - surface
+    }
     const radii = this.radiusAt(t / len)
     const r = Math.hypot(relU / radii.radiusU, relV / radii.radiusV)
     return (r - 1) * Math.min(radii.radiusU, radii.radiusV)
@@ -259,9 +269,17 @@ export class EllipsoidSegment {
     const t = THREE.MathUtils.clamp(tFrac, 0, 1)
     const anchor = this.a.clone().addScaledVector(axis, t * len)
     const { u, v } = this.frame(axis)
-    const radii = this.radiusAt(t)
     const du = dir.dot(u)
     const dv = dir.dot(v)
+    if (this.radial !== undefined) {
+      // 角向剖面：沿查询方向的表面半径直接查表 ✓（截面不是圆，椭球拟合会错 2~5cm）
+      const dn = Math.hypot(du, dv)
+      if (dn < 1e-9) return null
+      const r = this.radial.at(t, Math.atan2(dv, du))
+      const point = anchor.clone().addScaledVector(u, (du / dn) * r).addScaledVector(v, (dv / dn) * r)
+      return { point, distance: r }
+    }
+    const radii = this.radiusAt(t)
     const denom = Math.hypot(du / radii.radiusU, dv / radii.radiusV)
     if (denom < 1e-9) return null
     const r = 1 / denom
@@ -275,11 +293,19 @@ export class EllipsoidSegment {
     if (len < 1e-9) return null
     const rel = new THREE.Vector3().subVectors(p, this.a)
     const t = rel.dot(dir)
-    if (t < 0 || t > len) return null
-    const axisPoint = this.a.clone().addScaledVector(dir, t)
+    // 端帽区（轴向范围外）也要给外向：distance() 用端点帽处理这些点，probe 却
+    // 返回 null —— 指尖伸到段端之外时（躯干下端/大腿上端），「推出方向」就拿不到，
+    // 指尖修正与接触推挤全部哑火（2026-11-18 实测手插进腹部 119mm 推不出去）✓。
+    // 帽区的外向 = 从帽心指向查询点（近似径向）✓。
+    const clamped = THREE.MathUtils.clamp(t, 0, len)
+    const axisPoint = this.a.clone().addScaledVector(dir, clamped)
     const outward = new THREE.Vector3().subVectors(p, axisPoint)
     const l = outward.length()
-    if (l < 1e-9) return null
+    if (l < 1e-9) {
+      // 点在轴上：用段轴自己的垂直方向兜底（截面基的 u）
+      const { u } = this.frame(dir)
+      return { depth: this.distance(p), outward: u.clone() }
+    }
     outward.divideScalar(l)
     return { depth: this.distance(p), outward }
   }
@@ -295,6 +321,101 @@ export class EllipsoidSegment {
  *
  * @param tLo tHi 只统计轴向参数落在该区间的顶点（一段肢体分上下两半分别量）。
  */
+/**
+ * 角向半径剖面：截面不是圆（大腿外侧 6cm、内前 16cm），椭球拟合把外侧也撑到
+ * 11cm —— 指尖贴腿面（网格审计 0.6mm）被判「体内 4.8cm」（2026-11-18 实测）。
+ * 这个剖面按「截面角度 × 轴向位置」记真实的表面半径，distance 直接查表 ✓。
+ */
+export interface RadialProfile {
+  /** tFrac ∈ [0,1] 轴向、angle ∈ [0, 2π) 截面角（以 u 轴为 0，向 v 正方向为正）→ 表面半径（m）。 */
+  at(tFrac: number, angle: number): number
+}
+
+/**
+ * 量角向半径剖面：把段内的顶点按（轴向带 × 截面角桶）分格，
+ * 每格取分位数距离 = 该方向的表面半径。
+ *
+ * @param bands 轴向分段数；@param buckets 截面角桶数；@param percentile 每桶取的分位数。
+ */
+export function measureRadialProfile(
+  positions: Float32Array,
+  verts: number[],
+  a: THREE.Vector3,
+  b: THREE.Vector3,
+  tLo = 0,
+  tHi = 1,
+  orientation?: THREE.Quaternion,
+  bands = 8,
+  buckets = 16,
+  percentile = 0.9,
+): RadialProfile {
+  const axis = new THREE.Vector3().subVectors(b, a)
+  const len = axis.length()
+  if (len < 1e-9) return { at: () => 0.05 }
+  axis.divideScalar(len)
+  const { u, v } = segmentFrame(axis, orientation)
+  // 表格 [band][bucket]
+  const table: number[][] = []
+  for (let i = 0; i < bands; i++) table.push(new Array(buckets).fill(0))
+  const counts: number[][] = []
+  for (let i = 0; i < bands; i++) counts.push(new Array(buckets).fill(0))
+  const rel = new THREE.Vector3()
+  for (const vi of verts) {
+    rel.set(positions[vi * 3], positions[vi * 3 + 1], positions[vi * 3 + 2]).sub(a)
+    const t = rel.dot(axis) / len
+    if (t < tLo || t > tHi) continue
+    const tf = tHi > tLo ? (t - tLo) / (tHi - tLo) : 0
+    const ru = rel.dot(u)
+    const rv = rel.dot(v)
+    const d = Math.hypot(ru, rv)
+    if (d < 1e-6) continue
+    let ang = Math.atan2(rv, ru)
+    if (ang < 0) ang += Math.PI * 2
+    const bi = Math.min(bands - 1, Math.floor(tf * bands))
+    const bk = Math.min(buckets - 1, Math.floor((ang / (Math.PI * 2)) * buckets))
+    table[bi][bk] += d
+    counts[bi][bk] += 1
+  }
+  // 每桶取「均值 × 收缩」近似分位数（逐桶排序再取分位数在顶点稀疏的桶不稳）：
+  // 均值代表该方向的平均表面距离；桶内顶点就是该方向的表面顶点 ✓
+  const surf: number[][] = table.map((row, i) => row.map((sum, j) => {
+    const n = counts[i][j]
+    if (n === 0) return 0
+    return (sum / n) * percentile
+  }))
+  // 空桶用邻桶补（环形插值）
+  for (let i = 0; i < bands; i++) {
+    for (let j = 0; j < buckets; j++) {
+      if (surf[i][j] > 0) continue
+      for (const off of [1, -1, 2, -2, 3, -3]) {
+        const jj = (j + off + buckets * 4) % buckets
+        if (surf[i][jj] > 0) { surf[i][j] = surf[i][jj]; break }
+      }
+      if (surf[i][j] === 0) surf[i][j] = 0.05
+    }
+  }
+  // 轴向空带用邻带补
+  for (let j = 0; j < buckets; j++) {
+    for (let i = 0; i < bands; i++) {
+      if (surf[i][j] > 0) continue
+      for (const off of [1, -1, 2, -2]) {
+        const ii = i + off
+        if (ii >= 0 && ii < bands && surf[ii][j] > 0) { surf[i][j] = surf[ii][j]; break }
+      }
+    }
+  }
+  return {
+    at(tFrac: number, angle: number): number {
+      const tf = THREE.MathUtils.clamp(tFrac, 0, 0.9999)
+      let a2 = angle % (Math.PI * 2)
+      if (a2 < 0) a2 += Math.PI * 2
+      const bi = Math.floor(tf * bands)
+      const bk = Math.floor((a2 / (Math.PI * 2)) * buckets) % buckets
+      return surf[bi][bk]
+    },
+  }
+}
+
 export function measureSegmentRadii(
   positions: Float32Array,
   verts: number[],

@@ -27,6 +27,16 @@ export function hostDominant(fx: RigFixture, i: number): string {
   return fx.boneList[bj]?.name ?? ''
 }
 
+/** 顶点的主导骨权重（退化混合顶点接近 0，真皮肤顶点通常 ≥ 0.5）。 */
+export function hostDominantWeight(fx: RigFixture, i: number): number {
+  let bw = 0
+  for (let k = 0; k < 4; k++) {
+    const w = fx.skinWeight.getComponent(i, k)
+    if (w > bw) bw = w
+  }
+  return bw
+}
+
 export function createSolverHostFixture(fx: RigFixture): SolverHostFixture {
   const zSign = fx.zSign
   const restLocal = new Map<JointName, THREE.Vector3>()
@@ -70,6 +80,7 @@ export function createSolverHostFixture(fx: RigFixture): SolverHostFixture {
     bindPositions,
     bindNormals,
     dominantBone: (i: number) => hostDominant(fx, i),
+    dominantWeight: (i: number) => hostDominantWeight(fx, i),
     applyPose: (joints: JointRotations, root: Vec3, verts: number[]): Float32Array => {
       const hips = fx.byName.get('mixamorigHips')
       if (hips !== undefined) hips.position.set(root.x, root.y, root.z)

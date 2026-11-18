@@ -17,7 +17,7 @@ import * as THREE from 'three'
 import { JOINT_BONES, type RigBinding } from './rig.ts'
 import { JOINT_NAMES, type JointName } from './body.ts'
 import { makeHandFrame, type HandFrame } from './ik.ts'
-import { EllipsoidSegment, measureSegmentRadii } from './contact.ts'
+import { EllipsoidSegment, measureSegmentRadii, measureRadialProfile, type RadialProfile } from './contact.ts'
 import type { JointRotations } from './poses.ts'
 import type { EndEffectorId, SolverHost, Vec3 } from './solver.ts'
 
@@ -49,6 +49,8 @@ export interface MannequinGeometry {
   bindNormals: Float32Array
   /** 顶点的主导骨名。 */
   dominantBone(i: number): string
+  /** 顶点的主导骨权重（退化混合顶点接近 0，真皮肤顶点通常 ≥ 0.5）。 */
+  dominantWeight(i: number): number
   /** 应用姿势（模型空间）并返回指定顶点的蒙皮后位置（xyz 连续）。 */
   applyPose(joints: JointRotations, root: Vec3, verts: number[]): Float32Array
 }
@@ -63,7 +65,7 @@ interface SegmentSpec {
   tHi?: number
 }
 
-/** 碰撞代理：躯干拆三段（髋宽胸窄，整段一个椭球太粗）、大腿拆上下两半。 */
+/** 碰撞代理：躯干拆四段（髋宽胸窄，整段一个椭球太粗）、大腿拆上下两半。 */
 const COLLISION_SEGMENTS: SegmentSpec[] = [
   { name: 'leftThighUpper', aBone: 'mixamorigLeftUpLeg', bBone: 'mixamorigLeftLeg', verts: ['mixamorigLeftUpLeg'] },
   { name: 'leftThighLower', aBone: 'mixamorigLeftUpLeg', bBone: 'mixamorigLeftLeg', verts: ['mixamorigLeftUpLeg'] },
@@ -74,6 +76,11 @@ const COLLISION_SEGMENTS: SegmentSpec[] = [
   { name: 'torsoLower', aBone: 'mixamorigHips', bBone: 'mixamorigSpine', verts: ['mixamorigHips'] },
   { name: 'torsoMid', aBone: 'mixamorigSpine', bBone: 'mixamorigSpine2', verts: ['mixamorigSpine', 'mixamorigSpine1'] },
   { name: 'torsoUpper', aBone: 'mixamorigSpine2', bBone: 'mixamorigSpine3', verts: ['mixamorigSpine2', 'mixamorigSpine3'] },
+  // 上胸到颈根（spine3 → neck）：2026-11-18 实测漏了这段 —— 手横穿胸口时腕点
+  // 落在 y 1.28~1.43 的空档里，代理全说「体外」而网格审计说插进胸口 66~166mm。
+  // 顶点集必须带上 neck：上胸/锁骨带的顶点大量挂在 neck 骨上（spine3 只有 189 个、
+  // |x| p92=0.082，量出来的胸半宽只有 6.5cm，真胸 ~12cm → 代理细成一根棍，挡不住）✓。
+  { name: 'torsoChest', aBone: 'mixamorigSpine3', bBone: 'mixamorigNeck', verts: ['mixamorigSpine3', 'mixamorigNeck'] },
 ]
 
 /** 语义锚点用的整段代理：「手搭在大腿中段」说的是整条腿。 */
@@ -125,19 +132,26 @@ export function createSolverHost(geom: MannequinGeometry, binding: RigBinding): 
       : [`mixamorig${side}Foot`, `mixamorig${side}ToeBase`]
     const verts: number[] = []
     for (const bn of bones) for (const vi of vertsOfBone.get(bn) ?? []) verts.push(vi)
+    // 主导权重过滤：模型导出会在原点附近留少量**退化混合顶点**（权重摊到 4 根
+    // 骨、每根 ~0.3，主导骨是「险胜」的假象），蒙皮位置也不可信（HM08 实测 6 个
+    // 原点顶点混进脚部探针：y=0.000 必然当选「脚底」，且相对踝的偏移 ≈19cm 落在
+    // 两脚中间 → 目标投影把左脚目标朝右腿推、右脚朝左腿推 → 双腿互相推成极限环，
+    // 跪坐永不落定，2026-11-19）。权重不过半的顶点不配当探针 ✓。
+    const strong = verts.filter((vi) => geom.dominantWeight(vi) >= 0.5)
+    const pool = strong.length > 0 ? strong : verts
     const wrist = geom.boneAt(`mixamorig${side}${isHand ? 'Hand' : 'Foot'}`)
     const posOf = (vi: number) => new THREE.Vector3(
       bindPositions[vi * 3], bindPositions[vi * 3 + 1], bindPositions[vi * 3 + 2],
     )
-    if (verts.length === 0) {
+    if (pool.length === 0) {
       probeCache.set(id, [])
       return []
     }
-    const maxDist = Math.max(...verts.map((vi) => posOf(vi).distanceTo(wrist)))
+    const maxDist = Math.max(...pool.map((vi) => posOf(vi).distanceTo(wrist)))
     // 掌心：离腕 45% 处、离轴最近的顶点
-    let palmIdx = verts[0]
+    let palmIdx = pool[0]
     let palmBest = Infinity
-    for (const vi of verts) {
+    for (const vi of pool) {
       const d = posOf(vi).distanceTo(wrist)
       if (Math.abs(d - maxDist * 0.45) > maxDist * 0.12) continue
       const score = Math.abs(d - maxDist * 0.45)
@@ -148,7 +162,7 @@ export function createSolverHost(geom: MannequinGeometry, binding: RigBinding): 
       //   ⚠ 不能取脚背：脚背顶点落在小腿代理的半径里，会被判成「陷进小腿」
       //     → 接触求解把脚一次次甩出去 → 求解发散。
       let best = Infinity
-      for (const vi of verts) {
+      for (const vi of pool) {
         const p = posOf(vi)
         const d = p.distanceTo(wrist)
         if (d < maxDist * 0.25 || d > maxDist * 0.6) continue
@@ -158,7 +172,7 @@ export function createSolverHost(geom: MannequinGeometry, binding: RigBinding): 
     // 指尖 / 脚尖：远端顶点按粗格去重
     const tips: number[] = []
     const seenCells = new Set<string>()
-    for (const vi of verts) {
+    for (const vi of pool) {
       const p = posOf(vi)
       if (p.distanceTo(wrist) < maxDist * 0.82) continue
       const key = `${Math.round(p.x / 0.04)}:${Math.round(p.y / 0.04)}:${Math.round(p.z / 0.04)}`
@@ -171,7 +185,7 @@ export function createSolverHost(geom: MannequinGeometry, binding: RigBinding): 
       // 脚跟：踝后方最低的顶点（脚跟离地也要算）
       let heelIdx = palmIdx
       let heelY = Infinity
-      for (const vi of verts) {
+      for (const vi of pool) {
         const p = posOf(vi)
         if (p.z >= wrist.z) continue
         if (p.y < heelY) { heelY = p.y; heelIdx = vi }
@@ -180,7 +194,7 @@ export function createSolverHost(geom: MannequinGeometry, binding: RigBinding): 
       // 脚尖：最靠前的顶点
       let toeIdx = palmIdx
       let toeZ = -Infinity
-      for (const vi of verts) {
+      for (const vi of pool) {
         const p = posOf(vi)
         if (p.z > toeZ) { toeZ = p.z; toeIdx = vi }
       }
@@ -188,7 +202,7 @@ export function createSolverHost(geom: MannequinGeometry, binding: RigBinding): 
       // 脚背中段（跪坐时脚背朝下贴地）
       let dorsumIdx = palmIdx
       let dorsumY = -Infinity
-      for (const vi of verts) {
+      for (const vi of pool) {
         const p = posOf(vi)
         const d = p.distanceTo(wrist)
         if (d < maxDist * 0.15 || d > maxDist * 0.55) continue
@@ -196,7 +210,7 @@ export function createSolverHost(geom: MannequinGeometry, binding: RigBinding): 
       }
       out.push(dorsumIdx)
       // 脚掌最低的几个顶点（地面接触按脚掌最低点算）
-      const lows = verts
+      const lows = pool
         .map((vi) => ({ vi, y: bindPositions[vi * 3 + 1] }))
         .sort((a, b) => a.y - b.y)
         .slice(0, 3)
@@ -216,11 +230,22 @@ export function createSolverHost(geom: MannequinGeometry, binding: RigBinding): 
   }
 
   const collisionRadii = new Map<string, { radiusU: number; radiusV: number }>()
+  const collisionRadial = new Map<string, RadialProfile>()
   for (const spec of COLLISION_SEGMENTS) {
     const isThigh = spec.name.includes('Thigh')
     const tLo = spec.name.endsWith('Upper') ? 0 : isThigh ? 0.5 : 0
     const tHi = spec.name.endsWith('Upper') ? 0.5 : isThigh ? 1 : (spec.tHi ?? 1)
     collisionRadii.set(spec.name, radiiOf(spec, tLo, tHi))
+    // 角向半径剖面：截面不是圆（大腿外侧 ~6cm、内前 ~16cm），椭球拟合把外侧也
+    // 撑到 11cm → 指尖贴腿面（网格审计 0.6mm）被判「体内 4.8cm」→ 指尖修正误
+    // 触发大腕屈（2026-11-18 实测 stand 腕屈 7°→57°）。按截面角记真实表面半径 ✓。
+    const verts: number[] = []
+    for (const bn of spec.verts) for (const vi of vertsOfBone.get(bn) ?? []) verts.push(vi)
+    collisionRadial.set(spec.name, measureRadialProfile(
+      bindPositions, verts,
+      bindBoneAt(spec.aBone), bindBoneAt(spec.bBone),
+      tLo, tHi, geom.boneQuat(spec.aBone),
+    ))
   }
 
   const segments = (): EllipsoidSegment[] => {
@@ -231,14 +256,25 @@ export function createSolverHost(geom: MannequinGeometry, binding: RigBinding): 
       const r = collisionRadii.get(spec.name)!
       const b = (spec.tHi ?? 1) < 1 ? a.clone().lerp(full, spec.tHi!) : full
       const quat = geom.boneQuat(spec.aBone)
+      // Upper/Lower 拆半的段：剖面参数要重新映射到半段（段的 t ∈ [0,1] 对应整段的
+      // 前一半 / 后一半），否则半段拿到的是整段的剖面（半径错位）✓。
+      const remap = (t: number): number =>
+        spec.name.endsWith('Upper') ? t * 0.5
+          : spec.name.endsWith('Lower') ? 0.5 + t * 0.5
+          : (spec.tHi ?? 1) < 1 ? t * (spec.tHi ?? 1)
+          : t
+      const radial = collisionRadial.get(spec.name)
+      const remappedRadial: RadialProfile | undefined = radial === undefined
+        ? undefined
+        : { at: (tf, ang) => radial.at(remap(tf), ang) }
       if (spec.name.endsWith('Upper')) {
         const mid = a.clone().lerp(b, 0.5)
-        out.push(new EllipsoidSegment(spec.name, a, mid, r.radiusU, r.radiusV, quat))
+        out.push(new EllipsoidSegment(spec.name, a, mid, r.radiusU, r.radiusV, quat, undefined, remappedRadial))
       } else if (spec.name.endsWith('Lower')) {
         const mid = a.clone().lerp(b, 0.5)
-        out.push(new EllipsoidSegment(spec.name, mid, b, r.radiusU, r.radiusV, quat))
+        out.push(new EllipsoidSegment(spec.name, mid, b, r.radiusU, r.radiusV, quat, undefined, remappedRadial))
       } else {
-        out.push(new EllipsoidSegment(spec.name, a, b, r.radiusU, r.radiusV, quat))
+        out.push(new EllipsoidSegment(spec.name, a, b, r.radiusU, r.radiusV, quat, undefined, remappedRadial))
       }
     }
     return out

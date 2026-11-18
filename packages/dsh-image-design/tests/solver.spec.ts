@@ -143,15 +143,17 @@ describe('姿势求解器：语义锚点', () => {
     expect(solver.settled()).toBe(true)
   })
 
-  it('手搭大腿后不打滑（接触后切向速度被摩擦吃掉）', () => {
+  it('手搭大腿后停住（落定 + 不滑离锚点）', () => {
     const { solver } = solve(sitTargets())
+    // 落定 = 关节稳定（IK 跟踪已投影的目标，粒子速度不再是姿势的判据）
+    expect(solver.settled()).toBe(true)
+    // 且腕骨停在锚点解析出的目标上（没有滑离目标点）。粒子是纯物理量
+    // （重力 + 接触下的平衡点），不代表视觉位置，别拿它当判据
     const state = solver.debugState()
     const hand = state.handL
     expect(hand).toBeDefined()
-    // 落在腿面上就停住：残余速度低于落定阈值（摩擦把切向速度吃掉，不继续滑）
-    expect(Math.hypot(hand!.vel.x, hand!.vel.y, hand!.vel.z)).toBeLessThan(0.01)
-    // 且停在锚点解析出的目标上（没有滑离目标点）
-    expect(hand!.pos.distanceTo(hand!.goal)).toBeLessThan(0.02)
+    const wrist = fx.byName.get('mixamorigLeftHand')!.getWorldPosition(new THREE.Vector3())
+    expect(wrist.distanceTo(hand!.goal)).toBeLessThan(0.02)
   })
 })
 
@@ -189,7 +191,7 @@ describe('姿势求解器：确定性', () => {
     }
   })
 
-  it('目标跳变重置速度（意图跳变不产生甩尾）', () => {
+  it('目标跳变朝新意图移动且不过冲（意图跳变不产生甩尾）', () => {
     const targets = bindTargets()
     const solver = new PoseSolver(host)
     solver.setTargets(targets)
@@ -201,7 +203,10 @@ describe('姿势求解器：确定性', () => {
     solver.setTargets(moved)
     solver.step(1)
     const after = fx.byName.get('mixamorigLeftHand')!.getWorldPosition(new THREE.Vector3())
-    // 意图跳变只重置速度、不甩尾：一步之内手还在原处附近
-    expect(after.distanceTo(before)).toBeLessThan(0.03)
+    const goal = new THREE.Vector3(mp.x + 0.08, mp.y, mp.z)
+    // 朝新意图移动了
+    expect(after.distanceTo(goal)).toBeLessThan(before.distanceTo(goal))
+    // 且不越过新意图（无甩尾）：落点与新目标的距离不超过跳变量
+    expect(after.distanceTo(goal)).toBeLessThanOrEqual(0.08 + 0.01)
   })
 })

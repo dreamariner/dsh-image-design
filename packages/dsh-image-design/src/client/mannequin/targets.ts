@@ -108,8 +108,13 @@ function standFeet(m: BodyMetrics): PoseTargets['effectors'] {
 /** 手腕位置 + 手掌朝向（自然下垂：指尖朝下、掌心朝体侧）。 */
 function hangingArm(m: BodyMetrics, side: 'L' | 'R', zOff = 0, drop = 0.94): Vec3 {
   const s = side === 'L' ? 1 : -1
+  // 垂手要**清空大腿**：手臂垂直向下时指尖落在 x=肩半宽处，而大腿外缘在
+  // y≈指尖高度处比肩半宽更靠外（HM08 网格实测指尖会插进大腿/骨盆 25~30mm，
+  // 2026-11-18）→ 真实人站立时手臂略外张。外张量按「手半厚」给（指尖过腿面
+  // 一个手厚），随体型无关的比例量 ✓。
+  const OUTWARD = 0.032
   return {
-    x: s * m.shoulderHalf,
+    x: s * (m.shoulderHalf + OUTWARD),
     y: m.groundY + m.shoulderHeight - m.armLen * drop,
     z: zOff,
   }
@@ -250,8 +255,8 @@ function kneel(m: BodyMetrics): PoseTargets {
   return {
     root: { x: 0, y: hipsY, z: 0 },
     effectors: {
-      footL: { pos: { x: m.hipHalf, y: m.groundY + 0.145, z: fwd - m.shinLen }, pitchDeg: 52 },
-      footR: { pos: { x: -m.hipHalf, y: m.groundY + 0.145, z: fwd - m.shinLen }, pitchDeg: 52 },
+      footL: { pos: { x: m.hipHalf, y: m.groundY + 0.131, z: fwd - m.shinLen }, pitchDeg: 52 },
+      footR: { pos: { x: -m.hipHalf, y: m.groundY + 0.131, z: fwd - m.shinLen }, pitchDeg: 52 },
       handL: { anchor: { part: 'leftThigh', t: 0.42, radialDeg: 8, gapM: 0.002 } },
       handR: { anchor: { part: 'rightThigh', t: 0.42, radialDeg: 8, gapM: 0.002 } },
     },

@@ -144,6 +144,8 @@ export interface SolverConfig {
   maxSubsteps: number
   /** 落定判据：末速阈值（m/s）。1cm/s 肉眼已静止；再紧会被接触修正的微抖卡住。 */
   settleVelocity: number
+  /** 落定判据：单子步关节变化上限（弧度）。0.01°/子步 ≈ 1.2°/s，肉眼静止。 */
+  settleJointDelta: number
   /** 手部质量（kg）。 */
   handMass: number
   /** 脚部质量（kg）。 */
@@ -166,6 +168,7 @@ export const DEFAULT_SOLVER_CONFIG: SolverConfig = {
   substepsPerStep: 8,
   maxSubsteps: 240,
   settleVelocity: 0.01,
+  settleJointDelta: (0.01 * Math.PI) / 180,
   handMass: 0.5,
   footMass: 0.8,
   handStiffness: 600,
@@ -196,12 +199,28 @@ const POLE_CANDIDATES: readonly { key: string; dir: [number, number, number] }[]
 export const JOINT_LIMITS = {
   /** 肘屈曲上限（度）：过伸超过 5° 就是反关节。 */
   elbowFlexMaxDeg: 150,
-  /** 膝屈曲上限（度）：跪坐要折到 147° 左右（脚跟贴臀），135° 会让小腿折不下去。 */
-  kneeFlexMaxDeg: 155,
+  /**
+   * 膝屈曲上限（度）。
+   *
+   * 跪坐（正坐）对 THIS 体型的实测需求是 ~158°：大腿前下 33° 时大腿-小腿
+   * 内夹角只剩 22°（2026-11-19 实测：155° 的可达域夹取会把跪坐的踝目标沿
+   * 髋→踝方向推低 20mm，脚底跟着沉进地里，调目标常数治不了 —— 夹取只保证
+   * 距离下限、方向不变）。159° 给正坐留 7mm 距离余量，同时离反折（180°）
+   * 还很远 ✓。深蹲/跪姿拖拽也被此上限兜住。
+   */
+  kneeFlexMaxDeg: 159,
   /** 踝跖屈上限（度）。 */
   anklePlantarMaxDeg: 60,
   /** 踝背屈上限（度）。 */
   ankleDorsiflexMaxDeg: 45,
+  /**
+   * 腕屈曲上限（度）：手轴与前臂轴的夹角。
+   *
+   * 人腕能屈到 ~70°，但**静息/自然持握**在 10°~30°（2026-11-18 实机判据）。
+   * 超过 40° 手就摊成一把耙子（张开的四指 × 大腕屈 = 耙子状），
+   * 实测坐姿曾到 66° → 手看着像折断。求解器把腕屈夹回本上限 ✓。
+   */
+  wristFlexMaxDeg: 40,
 }
 
 interface Particle {
@@ -211,6 +230,12 @@ interface Particle {
   prev: THREE.Vector3
   vel: THREE.Vector3
   goal: THREE.Vector3
+  /**
+   * 上次投影时的**原始意图**位置（固定位置目标用；锚点目标恒为 null）。
+   *
+   * 固定位置意图没变就不重新投影（见 refreshGoals 的 2-周期注释）✓。
+   */
+  lastRawGoal: THREE.Vector3 | null
   /** 期望朝向（锚点推导或显式给出；null = 保持静息朝向）。 */
   forward: THREE.Vector3 | null
   normal: THREE.Vector3 | null
@@ -224,6 +249,8 @@ interface Particle {
 const tmpA = new THREE.Vector3()
 const tmpB = new THREE.Vector3()
 const tmpC = new THREE.Vector3()
+/** 未投影过目标的哨兵（新粒子的 goal 是哨兵，首轮必定重投影）。 */
+const ZERO_GOAL = new THREE.Vector3(1e9, 1e9, 1e9)
 
 /** 临界阻尼系数 c = 2ζ√(km)。 */
 function dampingCoefficient(stiffness: number, mass: number, ratio: number): number {
@@ -271,10 +298,39 @@ export class PoseSolver {
   private currentJoints: JointRotations = {}
   private readonly restFrames: Record<'Left' | 'Right', HandFrame>
   private isSettled = false
+  /** 上一子步的关节表（落定判据：关节变化量）。 */
+  private prevJoints: JointRotations = {}
+  /**
+   * 手臂「收回」的施密特触发器（每侧）。
+   *
+   * 收回与否的判据在边缘情形（上臂贴着体表擦过、间隙在 −5mm 附近）会翻来翻去：
+   * 收回 → 目标跳几 cm → 间隙变好 → 不收回 → 跳回去 → …… 2-周期震荡、永不落定
+   * （2026-11-18 实测 kneel 落定=否，肩/肘/腕每子步 ±0.15 rad 打摆）。改成
+   * 施密特触发器：间隙 < −8mm 才进入收回，间隙 ≥ 0 才退出 ✓（2026-11-19 从
+   * −1.5cm 收紧：前臂斜切胸腹角时链间隙只有 −11mm，旧门槛放过了它）。
+   */
+  private armShrunk: Record<'Left' | 'Right', boolean> = { Left: false, Right: false }
   /** 是否已做过首次 setTargets（决定要不要规范复位）。 */
   private initialized = false
   /** 探针顶点的蒙皮后位置（按探针顺序，xyz 连续）。 */
   private probePositions: Float32Array | null = null
+  /**
+   * 探针相对**粒子位置**的偏移（蒙皮那一刻记录）。
+   *
+   * 为什么不能拿 probePositions 减当前粒子位置（旧实现的 bug）：probePositions 是
+   * 上一子步蒙皮的，粒子那之后又被接触约束挪过 → 两个时刻相减 = 错位的「手体积」，
+   * 目标投影推的是一团错位的点（实测跨中线场景怎么推都 107mm）✓。
+   */
+  private probeOffsets = new Map<EndEffectorId, Float32Array>()
+  /**
+   * 末端体积采样的**静态**偏移（绑定姿态下量一次，相对腕/踝骨）。
+   *
+   * 目标投影必须用它：投影用的采样若随姿势变（动态探针），姿势是解给上一帧
+   * 目标的 → 采样跟着变 → 投影结果在两个吸引态之间 2-周期震荡（实测目标在
+   * 相距 19cm 的两点间永久打摆）。绑定姿态的手形状近似刚体，静态偏移让投影
+   * 变成 (意图, 体段) 的确定函数 → 平滑收敛 ✓。
+   */
+  private staticSamples = new Map<EndEffectorId, THREE.Vector3[]>()
   /** 各末端在自己的探针数组里的下标区间。 */
   private probeRanges = new Map<EndEffectorId, { start: number; count: number }>()
   /** 身体尺寸（首次复位时量一次）。 */
@@ -353,7 +409,8 @@ export class PoseSolver {
         pos: g.pos.clone(),
         prev: g.pos.clone(),
         vel: new THREE.Vector3(),
-        goal: g.pos.clone(),
+        goal: ZERO_GOAL.clone(),
+        lastRawGoal: null,
         forward: g.forward?.clone() ?? null,
         normal: g.normal?.clone() ?? null,
         poleHint: t.poleHint ?? 'back',
@@ -386,8 +443,9 @@ export class PoseSolver {
 
   /** 目标落到粒子：位置变了就清速度（意图跳变不甩尾）。 */
   private applyGoal(p: Particle, g: ResolvedGoal, reset: boolean, hint?: 'back' | 'out' | 'up'): void {
-    if (g.forward !== null) p.forward = g.forward.clone()
-    if (g.normal !== null) p.normal = g.normal.clone()
+    // 朝向无条件覆盖（含置空）：目标换了形态就该丢掉旧朝向 ✓
+    p.forward = g.forward === null ? null : g.forward.clone()
+    p.normal = g.normal === null ? null : g.normal.clone()
     if (hint !== undefined) p.poleHint = hint
     const moved = p.goal.distanceTo(g.pos) > 1e-4
     p.goal.copy(g.pos)
@@ -543,7 +601,11 @@ export class PoseSolver {
   }
 
   /**
-   * 挑肘的朝向：候选逐个解 IK，用「肘 + 前臂中点离躯干/腿的间隙」评分。
+   * 挑肘的朝向：候选逐个解 IK，用「上臂中点 + 肘 + 前臂中点离躯干/腿的间隙」评分。
+   *
+   * ⚠ 必须把**上臂中点**也算进去（2026-11-18 实机事故）：只看肘与前臂时，
+   * 目标在身体另一侧的场景会让 IK 把**上臂从躯干里穿过去** ——
+   * 实测上臂插进胸口 112mm，手是好的但整条胳膊穿模 ✓。
    *
    * 提示（poleHint）只给偏好分，不强制 —— 提示与身体冲突时物理优先 ✓。
    */
@@ -558,9 +620,10 @@ export class PoseSolver {
     const current = this.poleChoice[side]
     const scoreOf = (pole: THREE.Vector3): number => {
       const ik = solveTwoBone(chain, target, pole)
+      const upperMid = chain.shoulderPos.clone().add(ik.elbowPos).multiplyScalar(0.5)
       const foreMid = ik.elbowPos.clone().add(target).multiplyScalar(0.5)
       let clearance = Infinity
-      for (const p of [ik.elbowPos, foreMid]) {
+      for (const p of [upperMid, ik.elbowPos, foreMid]) {
         for (const seg of segments) {
           const d = seg.distance(p)
           if (d < clearance) clearance = d
@@ -595,12 +658,135 @@ export class PoseSolver {
       if (t === undefined) continue
       const g = this.resolveGoal(id, t)
       if (g === null) continue
-      const goal = g.pos.clone()
-      this.projectOutOfBody(goal)
-      p.goal.copy(goal)
-      if (g.forward !== null) p.forward = g.forward.clone()
-      if (g.normal !== null) p.normal = g.normal.clone()
+      // 目标 = **可达域 ∩ 体外**：两者的交集才算「手臂够得到且不穿身体」。
+      // 只做体外投影 → 目标可能压根够不着 → 手臂被拉直横扫身体（实测上臂插进
+      // 胸口 112mm）；只做可达域夹取 → 目标可能落在身体里 → 手插进身体 ✓。
+      // 两步交替两轮 → 逼近交集（确定性：每子步同输入同结果 ✓）。
+      // 采样用绑定姿态的静态手形状（volumeSamples）→ 投影是 (意图, 体段) 的
+      // 确定函数，没有「姿势 → 采样 → 目标 → 姿势」的反馈环 → 平滑收敛 ✓。
+      {
+        const goal = g.pos.clone()
+        for (let i = 0; i < 2; i++) {
+          goal.copy(this.clampToReachOf(id, goal))
+          this.projectOutOfBody(goal, id)
+        }
+        p.goal.copy(goal)
+      }
+      // 朝向**无条件**刷新（含置空）：目标从「带朝向」换成「只有位置」时，
+      // 必须把旧朝向丢掉，否则手会一直保持上一个姿势的手型（拧着）。
+      p.forward = g.forward === null ? null : g.forward.clone()
+      p.normal = g.normal === null ? null : g.normal.clone()
     }
+  }
+
+  /**
+   * 方向扫掠：目标方向穿过身体时，绕竖直轴向**肩侧**拐，直到链路不穿。
+   *
+   * 物理含义：手被胸口挡住，沿胸面滑到最近的可及点（2026-11-18 实测「手拖过中线」
+   * 上臂插进胸口 107mm —— 全伸时肘没有摆动自由度，pole 救不了，只能拐方向）。
+   *
+   * 拐的角度 = 从目标方向到「肩的正侧向」的有符号角的分位数（0.15 → 1.0 全拐到
+   * 正侧向），取第一个不穿的角度 → 滑动距离最小 ✓。确定性：同样的输入同样的拐法 ✓。
+   */
+  private sweepTargetToSide(
+    side: 'Left' | 'Right',
+    shoulderPos: THREE.Vector3,
+    target: THREE.Vector3,
+    hint: 'back' | 'out' | 'up',
+    chain: { shoulderPos: THREE.Vector3; parentQuat: THREE.Quaternion; upperOffset: THREE.Vector3; foreOffset: THREE.Vector3 },
+  ): { target: THREE.Vector3; pole: THREE.Vector3; ik: TwoBoneSolution } | null {
+    const dirFull = target.clone().sub(shoulderPos)
+    const len = dirFull.length()
+    if (len < 1e-6) return null
+    const dirH = new THREE.Vector3(dirFull.x, 0, dirFull.z)
+    const shoulderH = new THREE.Vector3(shoulderPos.x, 0, shoulderPos.z)
+    if (dirH.lengthSq() < 1e-10 || shoulderH.lengthSq() < 1e-10) return null
+    dirH.normalize()
+    shoulderH.normalize()
+    // 有符号角：dirH 绕 +Y 转 δ 后与 shoulderH 对齐（右手系，从上往下看逆时针为正）
+    const sinD = dirH.x * shoulderH.z - dirH.z * shoulderH.x
+    const cosD = dirH.dot(shoulderH)
+    const delta = Math.atan2(sinD, cosD)
+    for (const k of [0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1.0]) {
+      const rotH = dirH.clone().applyAxisAngle(tmpA.set(0, 1, 0), delta * k)
+      const candDir = new THREE.Vector3(rotH.x, dirFull.y / len, rotH.z).normalize()
+      const cand = shoulderPos.clone().addScaledVector(candDir, len)
+      const candPole = this.chooseArmPole(side, chain, cand, hint)
+      const candIk = solveTwoBone(chain, cand, candPole)
+      if (this.armClearance(candIk, cand, shoulderPos) >= 0) {
+        return { target: cand, pole: candPole, ik: candIk }
+      }
+    }
+    return null
+  }
+
+  /**
+   * 末端目标的可达域夹取（与 IK 里同一套口径 ✓）。
+   *
+   * 为什么要对**目标**也夹：目标不可达时，IK 会把关节角推到极限，手臂被拉直，
+   * 整条胳膊横扫身体（实测上臂插进胸口 112mm）—— 真实的手臂是「够不到就停在
+   * 身前」，不是「穿过去」✓。
+   */
+  private clampToReachOf(id: EndEffectorId, p: THREE.Vector3): THREE.Vector3 {
+    const binding = this.host.binding
+    const isHand = id === 'handL' || id === 'handR'
+    const rootJoint = isHand
+      ? (id === 'handL' ? 'shoulderL' : 'shoulderR')
+      : (id === 'footL' ? 'hipL' : 'hipR')
+    const midJoint = isHand
+      ? (id === 'handL' ? 'elbowL' : 'elbowR')
+      : (id === 'footL' ? 'kneeL' : 'kneeR')
+    const tipJoint = isHand
+      ? (id === 'handL' ? 'wristL' : 'wristR')
+      : (id === 'footL' ? 'ankleL' : 'ankleR')
+    const rootPos = this.host.boneAt(JOINT_BONES[rootJoint])
+    const L1 = (binding.restLocal.get(midJoint) as THREE.Vector3).length()
+    const L2 = (binding.restLocal.get(tipJoint) as THREE.Vector3).length()
+    const limit = isHand ? JOINT_LIMITS.elbowFlexMaxDeg : JOINT_LIMITS.kneeFlexMaxDeg
+    return clampToReach(rootPos, p, L1, L2, limit)
+  }
+
+  /**
+   * 掌心朝向的默认参考：朝体侧（手臂垂下时掌心贴大腿 ✓）。
+   *
+   * 取「肩→体中线」的水平方向：角色左 = +x，故左肩（x>0）的朝体内方向是 −x ✓。
+   */
+  private inwardPalmDir(shoulderPos: THREE.Vector3, side: 'Left' | 'Right'): THREE.Vector3 {
+    const dir = new THREE.Vector3(-shoulderPos.x, 0, 0)
+    if (dir.lengthSq() < 1e-9) dir.set(side === 'Left' ? -1 : 1, 0, 0)
+    return dir.normalize()
+  }
+
+  /**
+   * 手臂（肩→肘→腕）离身体的间隙（米）：负 = 穿进身体了。
+   *
+   * 取样：上臂中点、肘、前臂中点 —— 三处都要不穿才算手臂没穿模 ✓。
+   */
+  private armClearance(
+    ik: TwoBoneSolution,
+    target: THREE.Vector3,
+    shoulderPos: THREE.Vector3,
+  ): number {
+    const samples = [
+      shoulderPos.clone().add(ik.elbowPos).multiplyScalar(0.5),
+      ik.elbowPos.clone(),
+      ik.elbowPos.clone().add(target).multiplyScalar(0.5),
+      // 前臂近腕 3/4 处：前臂斜切胸腹角时最深处在中点靠腕一侧（2026-11-19 实测
+      // 手拖进腹部：中点 −11mm、3/4 处更深 → 网格 56mm），中点一个样本看不住 ✓
+      ik.elbowPos.clone().lerp(target, 0.75),
+      // ⚠ 腕点（= 收缩后的目标）本身也要查（2026-11-18 实测）：只查上臂/肘/前臂时，
+      //   收缩候选会把腕塞进胸腔（肘与前臂都「贴着」体表、腕却在体内）→ 手插进躯干
+      //   62mm。腕在体表之外 + 链上各点不穿，才算这条候选成立 ✓。
+      target.clone(),
+    ]
+    let worst = Infinity
+    for (const p of samples) {
+      for (const seg of this.host.segments()) {
+        const d = seg.distance(p)
+        if (d < worst) worst = d
+      }
+    }
+    return worst
   }
 
   /**
@@ -609,18 +795,186 @@ export class PoseSolver {
    *
    * 不做这一步的后果：弹簧每步往里拉、接触每步往外推，两股力顶着抖，
    * 速度永远不归零（求解器不落定，实测 |v|≈1.2m/s 的极限环）。
+   *
+   * ⚠ 按**末端的体积**投影，不是只推腕点（2026-11-18 实机事故）：
+   * 手还有 19cm 的指节伸出腕外，腕在腿外 1cm 不代表手没插进腿。
+   * 所以要把「掌心 + 指尖」几个采样点一起推到体外 ✓。
    */
-  private projectOutOfBody(p: THREE.Vector3): void {
+  private projectOutOfBody(p: THREE.Vector3, id: EndEffectorId): void {
     const segments = this.host.segments()
-    for (const seg of segments) {
-      const d = seg.distance(p)
-      if (d >= 0) continue
-      const pr = seg.probe(p)
-      if (pr === null) continue
-      // 推到表面**外侧 1cm**：正好贴面的话接触每步都在临界触发，
-      // 推出方向又随位置摆动 → 目标点乱抖 → 求解发散。
-      p.addScaledVector(pr.outward, -d + 0.01)
+    const samples = this.volumeSamples(id)
+    // 脚跳过**同侧**腿段（与 applyContacts 同规则）：脚的静置摆动就在自己的
+    // 小腿/大腿代理旁，静态脚样本一伸进去就被往外推 → 目标漂移不落定
+    //（实测 walk/run/kneel 落定=否）✓。
+    const skipOwnLeg = id === 'footL' || id === 'footR'
+    const ownSide = id === 'footL' || id === 'handL' ? 'left' : 'right'
+    const segs = skipOwnLeg ? segments.filter((seg) => !seg.name.startsWith(ownSide)) : segments
+    // 逐采样点迭代推出：每个采样点用它**自己**的外向。
+    //
+    // 为什么不能只按最深采样推一次（旧实现）：手横穿身体时（腕在一侧体内、指尖从
+    // 另一侧穿出），腕点的外向指向侧面、指尖的外向指向前方 —— 按腕的外向推一次，
+    // 手整体平移后指尖还是插在身体里（实测怎么推都 57~117mm）。
+    // 迭代 4 轮：每轮处理当前最深的采样点，整条手的体积逐步挪出体外 ✓。
+    for (let iter = 0; iter < 4; iter++) {
+      let moved = false
+      for (const s of samples) {
+        for (const seg of segs) {
+          const q = tmpB.copy(p).add(s)
+          const d = seg.distance(q)
+          if (d >= 0) continue
+          const outward = seg.probe(q)?.outward ?? null
+          if (outward === null) continue
+          // 推到表面**外侧 5mm**：正好贴面的话接触每步都在临界触发，
+          // 推出方向又随位置摆动 → 目标点乱抖 → 求解发散。
+          p.addScaledVector(outward, -d + 0.005)
+          moved = true
+        }
+      }
+      if (!moved) break
     }
+  }
+
+  /**
+   * 末端（手）的长度（米）：从上一子步蒙皮探针量「腕 → 最远探针」的距离。
+   *
+   * 指尖修正用：把「腕 + forward × 手长」查碰撞才知道指尖有没有戳进去。
+   * 探针没算出来时退化为 0（不修正）。
+   */
+  private handLenOf(id: EndEffectorId): number {
+    // 活体探针优先：指尖修正量的是**真实摆位**的手长（静态采样取绑定姿态的
+    // 张开手指，手长多 ~4cm，在贴腿姿势会把指尖修正误触发成大腕屈 ✓ 实测）。
+    const offsets = this.probeOffsets.get(id)
+    if (offsets !== undefined) {
+      let best = 0
+      for (let k = 0; k < offsets.length / 3; k++) {
+        const d = Math.hypot(offsets[k * 3], offsets[k * 3 + 1], offsets[k * 3 + 2])
+        if (d > best) best = d
+      }
+      if (best > 0.01) return best
+    }
+    let best = 0
+    for (const v of this.volumeSamples(id)) {
+      const d = v.length()
+      if (d > best) best = d
+    }
+    return best
+  }
+
+  /**
+   * 指尖不戳进身体：把 forward 沿「朝外」方向旋出，直到指尖点在体外。
+   *
+   * 为什么必须做（2026-11-18 实测）：目标没给朝向时手沿前臂方向延伸，前臂指向
+   * 身体（跨中线够东西、手按体表）时指尖插进躯干/腿 62~117mm。真实的手按在
+   * 面上时腕背伸、指尖顺面滑 ✓。
+   *
+   * 偏角封顶：腕背伸解剖极限 ~70°；封顶后仍有残余穿深就交给接触约束兜住
+   *（腕折 90° 把手折断的观感更差）。
+   */
+  private keepFingersOut(wristPos: THREE.Vector3, forward: THREE.Vector3, id: EndEffectorId): THREE.Vector3 {
+    const range = this.probeRanges.get(id)
+    const positions = this.probePositions
+    if (range === undefined || positions === null || range.count === 0) return forward.clone()
+    const segments = this.host.segments()
+    // 判据用**活体探针**（上一子步蒙皮的真实手指顶点），不用「腕 + forward × 手长」
+    // 的合成点：合成点与真实手指差 2cm+，配上偏肥的代理会把「贴腿路过」误判成
+    // 体内 → 大腕屈（实测 stand 腕屈 7°→57°）✓。
+    // 同侧腿段用深触发（−4cm）：手贴着自己的腿路过是常态（stand 垂手），代理偏肥
+    // 会把「擦边」误判体内 → 大腕屈（实测 stand 腕屈 7°→57°）；真把手戳进自己
+    // 腿里的穿深在 4cm+。躯干与对侧肢体不豁免（跨中线/按胸口是真问题）✓。
+    const ownPrefix = id === 'handL' ? 'left' : 'right'
+    const isOwnLegSeg = (segName: string): boolean =>
+      segName.startsWith(ownPrefix) && (segName.includes('Thigh') || segName.includes('Shin'))
+    const deadbandFor = (segName: string): number => (isOwnLegSeg(segName) ? -0.04 : -0.015)
+    let deepest = 0
+    let outward: THREE.Vector3 | null = null
+    let deepestSeg: { name: string } | null = null
+    let deepestOffset: THREE.Vector3 | null = null
+    for (let k = range.start; k < range.start + range.count; k++) {
+      const q = tmpB.set(positions[k * 3], positions[k * 3 + 1], positions[k * 3 + 2])
+      for (const seg of segments) {
+        const d = seg.distance(q)
+        if (d < deepest && d < deadbandFor(seg.name)) {
+          deepest = d
+          outward = seg.probe(q)?.outward ?? null
+          deepestSeg = seg
+          deepestOffset = new THREE.Vector3(
+            positions[k * 3] - wristPos.x,
+            positions[k * 3 + 1] - wristPos.y,
+            positions[k * 3 + 2] - wristPos.z,
+          )
+        }
+      }
+    }
+    if (outward === null || deepestOffset === null || deepestSeg === null) {
+      return forward.clone()
+    }
+    // TS 收窄：闭包里的可变捕获要落成 const（deepestSeg possibly null ✗）
+    const seg0 = deepestSeg
+    const offset0 = deepestOffset
+    const axis = new THREE.Vector3().crossVectors(forward, outward)
+    if (axis.lengthSq() < 1e-10) return forward.clone()
+    axis.normalize()
+    const out = forward.clone()
+    const rotated = new THREE.Vector3()
+    // 「改善即收」：转一个小角度只要让指尖深度**变浅**就接受。
+    //
+    // 为什么不要求「完全转出体外」：边缘情形（手指贴着体表搭着）没有能把指尖
+    // 完全转出去的角度，旧判据会一路转满 70°，下一子步探针又变、再转 ——
+    // 两个状态之间 2-周期震荡、永不落定（2026-11-18 实测 kneel 落定=否）。
+    // 改善即收让深度单调变浅 → 收敛 ✓；没有改善就不转（保持稳定）✓。
+    for (const theta of [0.2, 0.4, 0.7, 1.0, 1.22]) {
+      out.copy(forward).applyAxisAngle(axis, theta)
+      // 手是刚体：手指偏移向量跟着手系一起转（绕同一轴、同一角）
+      rotated.copy(offset0).applyAxisAngle(axis, theta)
+      const tipQ = tmpB.copy(wristPos).add(rotated)
+      let worst = 0
+      for (const seg of segments) {
+        const d = seg.distance(tipQ)
+        if (d < worst) worst = d
+      }
+      if (worst > deepest + 0.002) return out
+    }
+    return forward.clone()
+  }
+
+  /**
+   * 末端的体积采样偏移（相对腕/踝，模型空间）：掌心、指尖、掌根…
+   *
+   * 用上一子步蒙皮后的探针位置减去腕的位置得到 → 手长、掌厚自动跟着模型走
+   *（换体型不用改常数）✓。探针没算出来时退化成「只有腕点」。
+   */
+  private volumeSamples(id: EndEffectorId): THREE.Vector3[] {
+    const cached = this.staticSamples.get(id)
+    if (cached !== undefined) return cached
+    const probes = this.host.effectorProbes(id)
+    if (probes.length === 0) return [new THREE.Vector3()]
+    // 绑定姿态下量一次（零关节表）：手形状近似刚体，偏移与姿势无关 ✓
+    const posed = this.host.applyPose(this.zeroJoints(), this.targets.root, probes)
+    const side = id === 'handL' || id === 'footL' ? 'Left' : 'Right'
+    const isHand = id === 'handL' || id === 'handR'
+    const wrist = this.host.boneAt(`mixamorig${side}${isHand ? 'Hand' : 'Foot'}`)
+    const all: THREE.Vector3[] = [new THREE.Vector3(0, 0, 0)]
+    for (let k = 0; k < probes.length; k++) {
+      all.push(new THREE.Vector3(
+        posed[k * 3] - wrist.x,
+        posed[k * 3 + 1] - wrist.y,
+        posed[k * 3 + 2] - wrist.z,
+      ))
+    }
+    // 稀疏化：最多 8 个（零偏移 + 均匀 6 个 + 最远的指尖）
+    const out: THREE.Vector3[] = [all[0]]
+    const rest = all.slice(1)
+    const step = Math.max(1, Math.ceil(rest.length / 6))
+    for (let k = 0; k < rest.length; k += step) out.push(rest[k])
+    let far = rest[0]
+    let farD = -1
+    for (const v of rest) {
+      const d = v.lengthSq()
+      if (d > farD) { farD = d; far = v }
+    }
+    out.push(far.clone())
+    this.staticSamples.set(id, out)
+    return out
   }
 
   /** 外力积分 + 预测：重力 + 连回目标的弹簧 + 阻尼。 */
@@ -636,14 +990,29 @@ export class PoseSolver {
     }
   }
 
-  /** 速度更新（PBD：位置修正后的速度反推）。 */
+  /**
+   * 速度更新（PBD：位置修正后的速度反推）+ 落定判据。
+   *
+   * 落定看**关节**不看粒子（2026-11-18 改）：IK 跟踪的是已投影的目标（稳定），
+   * 关节不再随粒子动；粒子仍被接触约束推挤（每子步恒定位移 → 恒定速度），
+   * 拿粒子速度判落定会永远差一点。渲染的是关节 —— 关节稳定 = 视觉已稳定 ✓
+   * （且关节冻结 → 探针/采样/锚点全部冻结 → 目标也冻结，全链路收敛 ✓）。
+   */
   private updateVelocities(): void {
     let maxSpeed = 0
     for (const p of this.particles.values()) {
       p.vel.copy(p.pos).sub(p.prev).divideScalar(this.cfg.dt)
       maxSpeed = Math.max(maxSpeed, p.vel.length())
     }
-    this.isSettled = maxSpeed < this.cfg.settleVelocity
+    let maxJointDelta = 0
+    for (const [j, r] of Object.entries(this.currentJoints)) {
+      const prev = this.prevJoints[j]
+      if (prev === undefined) { maxJointDelta = Infinity; break }
+      const d = Math.max(Math.abs(r.x - prev.x), Math.abs(r.y - prev.y), Math.abs(r.z - prev.z))
+      if (d > maxJointDelta) maxJointDelta = d
+    }
+    this.prevJoints = JSON.parse(JSON.stringify(this.currentJoints)) as JointRotations
+    this.isSettled = maxJointDelta < this.cfg.settleJointDelta
   }
 
   /** 接触约束：身体接触（推离 + 摩擦）+ 地面接触。 */
@@ -723,29 +1092,81 @@ export class PoseSolver {
       const foreOffset = binding.restLocal.get(wJoint) as THREE.Vector3
       const shoulderPos = this.host.boneAt(JOINT_BONES[sJoint])
       const parentQuat = this.host.boneParentQuat(JOINT_BONES[sJoint])
-      const target = clampToReach(shoulderPos, p.pos, upperOffset.length(), foreOffset.length(), JOINT_LIMITS.elbowFlexMaxDeg)
+      const chain = { shoulderPos, parentQuat, upperOffset, foreOffset }
+      // IK 目标跟踪**已投影的目标**（p.goal），不跟踪粒子位置：
+      // 粒子被接触约束推挤、每子步在跳，IK 跟它 = 与目标投影形成反馈环 → 震荡不落定
+      // （实测腹部场景落定=否）。目标本身已做「可达 ∩ 体外」，跟踪它是稳定且合法的 ✓；
+      // 粒子的惯性表现（拖动滞后）由物理层保留，关节走稳定的目标 ✓。
+      let target = clampToReach(shoulderPos, p.goal, upperOffset.length(), foreOffset.length(), JOINT_LIMITS.elbowFlexMaxDeg)
       // 肘的朝向：候选里挑一个离躯干/腿最空的（提示只作偏好，不作命令 ✓）
-      const pole = this.chooseArmPole(
-        side, { shoulderPos, parentQuat, upperOffset, foreOffset }, target, p.poleHint,
-      )
-      const ik: TwoBoneSolution = solveTwoBone(
-        { shoulderPos, parentQuat, upperOffset, foreOffset },
-        target,
-        pole,
-      )
+      let pole = this.chooseArmPole(side, chain, target, p.poleHint)
+      let ik: TwoBoneSolution = solveTwoBone(chain, target, pole)
+      // 手臂要穿过身体时把目标收回来 / 拐到同侧：真实的手臂会「撞到胸口就滑不动」✓
+      // （不处理的话 IK 只能让上臂从躯干里穿过去 —— 实测插进胸口 112mm）。
+      // 两段兜底，先试哪个能解开：
+      //   ① 收回（沿肩→目标方向缩短）：目标太远横跨身体时，缩短后肘有摆动空间，
+      //      配合 pole 能绕开；
+      //   ② 方向扫掠（绕竖直轴向肩侧转）：方向本身穿过胸腔时（跨中线够东西），
+      //      缩短救不了（射线整条在体内），必须把方向拐回来 —— 这就是「手沿胸口
+      //      滑到能滑到的最远处」的物理行为 ✓。
+      // 触发用施密特触发器（见 armShrunk 的注释）：间隙 < −8mm 进入收回、
+      // ≥ 0 退出；边缘擦碰不再每子步翻转 ✓。阈值从 −1.5cm 收紧到 −8mm
+      // （2026-11-19 实测）：前臂斜切胸腹角时，链间隙只有 −11mm（代理口径），
+      // −1.5cm 的门槛让纠正完全不触发 → 前臂 56mm 插进躯干网格。全部候选
+      // 失败时保持原目标（goal 已是「可达 ∩ 体外」，擦碰比把腕塞进体内好 ✓）。
+      const fullClear = this.armClearance(ik, target, shoulderPos)
+      const shouldTry = this.armShrunk[side] ? fullClear < 0 : fullClear < -0.008
+      if (shouldTry) {
+        let resolved = false
+        const dir = target.clone().sub(shoulderPos)
+        for (const t of [0.85, 0.7, 0.55, 0.4]) {
+          const shrunk = shoulderPos.clone().addScaledVector(dir, t)
+          const candPole = this.chooseArmPole(side, chain, shrunk, p.poleHint)
+          const candIk = solveTwoBone(chain, shrunk, candPole)
+          if (this.armClearance(candIk, shrunk, shoulderPos) >= 0) {
+            target = shrunk
+            pole = candPole
+            ik = candIk
+            resolved = true
+            break
+          }
+        }
+        if (!resolved) {
+          const swept = this.sweepTargetToSide(side, shoulderPos, target, p.poleHint, chain)
+          if (swept !== null) {
+            target = swept.target
+            pole = swept.pole
+            ik = swept.ik
+            resolved = true
+          }
+        }
+        this.armShrunk[side] = resolved
+      } else {
+        this.armShrunk[side] = false
+      }
       joints[sJoint] = localQuatToPoseEuler(ik.shoulderLocal, zSign)
       joints[eJoint] = localQuatToPoseEuler(ik.elbowLocal, zSign)
-      // 腕：按目标朝向摆掌心（forward 指尖方向 + normal 掌心法向）
-      // 朝向来自粒子（锚点推导或目标显式给出）；都没给 → 保持静息朝向 ✓
-      if (p.forward !== null || p.normal !== null) {
-        const forward = p.forward ?? this.restFrames[side].forward
-        const normal = p.normal ?? this.restFrames[side].normal
-        const desired = makeHandFrame(forward, normal)
-        const elbowWorld = parentQuat.clone().multiply(ik.shoulderLocal).multiply(ik.elbowLocal)
-        joints[wJoint] = localQuatToPoseEuler(solveHandOrientation(this.restFrames[side], desired, elbowWorld), zSign)
-      } else {
-        joints[wJoint] = { x: 0, y: 0, z: 0 }
-      }
+      // 腕：始终给一个**确定**的朝向。
+      //
+      // 为什么不能「没给朝向就摆零位」：腕关节零位 = 保持前臂的静息朝向，于是手
+      // 只能跟着前臂乱转 —— 实机截图里手拧成耙子（2026-11-18），而且手指会转进
+      // 身体里（实测「手拖过中线」穿插 112mm）。
+      //
+      // 缺省朝向推导「自然手」：指尖沿前臂方向延伸（腕不折）+ 掌心朝体侧
+      //（手臂垂下时掌心贴大腿 ✓）。目标给了 forward/normal 就按它摆 ✓。
+      const foreDir = tmpA.subVectors(target, ik.elbowPos).normalize()
+      const forward = p.forward !== null ? p.forward.clone() : foreDir.clone()
+      const normal = p.normal !== null ? p.normal.clone() : this.inwardPalmDir(shoulderPos, side)
+      const flexClamped = clampWristFlexion(forward, foreDir, JOINT_LIMITS.wristFlexMaxDeg)
+      // 指尖别戳进身体：前臂指向身体时（跨中线够东西 / 手按在体表），指尖沿前臂
+      // 方向延伸会插进躯干/腿 —— 实测手插进胸口 62~117mm（2026-11-18）。
+      // 修法：把指尖点查一遍碰撞，戳进去就把 forward 沿「朝外」方向旋出（腕背伸，
+      // 真实的手按在面上时指尖是顺着面滑的）。总偏角封顶 70°（腕背伸的解剖极限），
+      // 残余的穿深由接触约束兜住（比腕折 90° 好看）。
+      const fingersOut = this.keepFingersOut(target, flexClamped, side === 'Left' ? 'handL' : 'handR')
+      const desired = makeHandFrame(fingersOut, normal)
+      const elbowWorld = parentQuat.clone().multiply(ik.shoulderLocal).multiply(ik.elbowLocal)
+      joints[wJoint] = localQuatToPoseEuler(solveHandOrientation(this.restFrames[side], desired, elbowWorld), zSign)
     }
 
     for (const side of ['Left', 'Right'] as const) {
@@ -758,7 +1179,8 @@ export class PoseSolver {
       const foreOffset = binding.restLocal.get(aJoint) as THREE.Vector3
       const hipPos = this.host.boneAt(JOINT_BONES[hJoint])
       const parentQuat = this.host.boneParentQuat(JOINT_BONES[hJoint])
-      const target = clampToReach(hipPos, p.pos, upperOffset.length(), foreOffset.length(), JOINT_LIMITS.kneeFlexMaxDeg)
+      // 与手臂同理由：IK 跟踪已投影的目标（p.goal），不跟踪被接触推挤的粒子 ✓
+      const target = clampToReach(hipPos, p.goal, upperOffset.length(), foreOffset.length(), JOINT_LIMITS.kneeFlexMaxDeg)
       // 膝的 pole：向前（膝盖永远朝前，不会反关节 ✓）
       const ik = solveTwoBone({ shoulderPos: hipPos, parentQuat, upperOffset, foreOffset }, target, tmpC.set(0, 0, 1).normalize())
       joints[hJoint] = localQuatToPoseEuler(ik.shoulderLocal, zSign)
@@ -793,6 +1215,26 @@ export class PoseSolver {
       allProbes.push(...idxs)
     }
     this.probePositions = this.host.applyPose(joints, this.targets.root, allProbes)
+    // 记录「蒙皮那一刻」探针相对**腕/踝骨**的偏移（体积投影 / 指尖修正用）。
+    // ⚠ 必须挂在骨上、不能挂在粒子上：IK 解出的腕骨不一定落在粒子位置
+    //   （可达域夹取 / 接触推挤都会让两者分开），挂粒子上 offset 整体错位，
+    //   采样点变成「上一帧的手的绝对位置」→ 投影判「全在体外」→ 目标回到
+    //   体内（实测跨中线场景怎么推都 107mm）✓。
+    for (const [id] of this.particles) {
+      const range = this.probeRanges.get(id)
+      if (range === undefined) continue
+      const side = id === 'handL' || id === 'footL' ? 'Left' : 'Right'
+      const isHand = id === 'handL' || id === 'handR'
+      const anchor = this.host.boneAt(`mixamorig${side}${isHand ? 'Hand' : 'Foot'}`)
+      const offsets = new Float32Array(range.count * 3)
+      for (let k = 0; k < range.count; k++) {
+        const idx = range.start + k
+        offsets[k * 3] = this.probePositions[idx * 3] - anchor.x
+        offsets[k * 3 + 1] = this.probePositions[idx * 3 + 1] - anchor.y
+        offsets[k * 3 + 2] = this.probePositions[idx * 3 + 2] - anchor.z
+      }
+      this.probeOffsets.set(id, offsets)
+    }
   }
 }
 
@@ -800,4 +1242,29 @@ export class PoseSolver {
 export interface JointRotationsResult {
   joints: JointRotations
   settled: boolean
+}
+
+/**
+ * 腕屈夹回解剖区间：手轴与前臂轴的夹角不超过上限。
+ *
+ * 为什么必须夹（2026-11-18 实机事故）：坐姿的腕屈一度到 66° —— 手摊成一把耙子
+ * （人看着像折断）。人腕能屈到 ~70°，但自然持握在 10°~30°。
+ *
+ * 夹的方式：把手轴在「前臂方向 ↔ 目标手轴」构成的平面内**转回前臂方向**，
+ * 保留「指尖大致该朝哪」的意图（不是把手掰到另一个姿态）✓。
+ */
+export function clampWristFlexion(
+  forward: THREE.Vector3,
+  foreDir: THREE.Vector3,
+  maxDeg: number,
+): THREE.Vector3 {
+  const cosA = THREE.MathUtils.clamp(forward.dot(foreDir), -1, 1)
+  const ang = Math.acos(cosA)
+  const maxRad = (maxDeg * Math.PI) / 180
+  if (ang <= maxRad) return forward.clone()
+  const axis = new THREE.Vector3().crossVectors(foreDir, forward)
+  if (axis.lengthSq() < 1e-10) return forward.clone()
+  axis.normalize()
+  // 绕 (foreDir × forward) 转 -(ang - max)：手轴朝前臂方向收 ✓
+  return forward.clone().applyAxisAngle(axis, -(ang - maxRad))
 }

@@ -120,6 +120,16 @@ function hangingArm(m: BodyMetrics, side: 'L' | 'R', zOff = 0, drop = 0.94): Vec
   }
 }
 
+/** 垂手/摆臂的掌心朝向：朝内偏后 ~30°。
+ *
+ * 为什么不朝正内侧（2026-11-19 实测）：HM08 手指张开且微卷（朝掌心侧），
+ * 掌心朝正内时指腹正好戳进大腿（stand 穿插 30.7mm）—— 真人垂手时掌心天然
+ * 朝内偏后（虎口朝前），指卷离腿面 ✓。 */
+function hangingPalm(side: 'L' | 'R'): Vec3 {
+  const s = side === 'L' ? 1 : -1
+  return { x: s * 0.87, y: 0, z: -0.5 }
+}
+
 /** a-pose（绑定姿态）：肩宽下垂 43°、前倾 23°，其余零位。 */
 function aPose(m: BodyMetrics): PoseTargets {
   const shY = m.groundY + m.shoulderHeight
@@ -156,12 +166,12 @@ function stand(m: BodyMetrics): PoseTargets {
       handL: {
         pos: hangingArm(m, 'L'),
         forward: { x: 0, y: -1, z: 0 },
-        normal: { x: -1, y: 0, z: 0 },
+        normal: hangingPalm('L'),
       },
       handR: {
         pos: hangingArm(m, 'R'),
         forward: { x: 0, y: -1, z: 0 },
-        normal: { x: 1, y: 0, z: 0 },
+        normal: hangingPalm('R'),
       },
     },
   }
@@ -190,12 +200,12 @@ function walk(m: BodyMetrics): PoseTargets {
       handL: {
         pos: hangingArm(m, 'L', -m.armLen * 0.06),
         forward: { x: 0, y: -1, z: 0 },
-        normal: { x: -1, y: 0, z: 0 },
+        normal: hangingPalm('L'),
       },
       handR: {
         pos: hangingArm(m, 'R', m.armLen * 0.06),
         forward: { x: 0, y: -1, z: 0 },
-        normal: { x: 1, y: 0, z: 0 },
+        normal: hangingPalm('R'),
       },
     },
   }
@@ -212,12 +222,12 @@ function run(m: BodyMetrics): PoseTargets {
       handL: {
         pos: hangingArm(m, 'L', -m.armLen * 0.12, 0.9),
         forward: { x: 0, y: -1, z: 0 },
-        normal: { x: -1, y: 0, z: 0 },
+        normal: hangingPalm('L'),
       },
       handR: {
         pos: hangingArm(m, 'R', m.armLen * 0.08, 0.77),
         forward: { x: 0, y: -1, z: 0 },
-        normal: { x: 1, y: 0, z: 0 },
+        normal: hangingPalm('R'),
       },
     },
   }
@@ -236,8 +246,19 @@ function sit(m: BodyMetrics): PoseTargets {
     effectors: {
       footL: { pos: { x: m.hipHalf, y: m.groundY + m.ankleHeight, z: m.thighLen } },
       footR: { pos: { x: -m.hipHalf, y: m.groundY + m.ankleHeight, z: m.thighLen } },
-      handL: { anchor: { part: 'leftThigh', t: 0.48, radialDeg: 5, gapM: 0.002 } },
-      handR: { anchor: { part: 'rightThigh', t: 0.48, radialDeg: 5, gapM: 0.002 } },
+      // 掌向显式给（2026-11-19）：「搭覆在大腿上」—— 掌心朝下前（指卷顺腿面
+      // 坡度滑向膝，不戳腿面）；掌朝正下会让卷指戳进腿 → 投影把整手抬起悬空
+      //（实测 sit 手-腿间隙 37mm 悬空）✓
+      handL: {
+        anchor: { part: 'leftThigh', t: 0.48, radialDeg: 5, gapM: 0.002 },
+        forward: { x: 0, y: -0.15, z: 0.99 },
+        normal: { x: 0, y: -0.99, z: -0.15 },
+      },
+      handR: {
+        anchor: { part: 'rightThigh', t: 0.48, radialDeg: 5, gapM: 0.002 },
+        forward: { x: 0, y: -0.15, z: 0.99 },
+        normal: { x: 0, y: -0.99, z: -0.15 },
+      },
     },
     // 上身前倾 17°（手要够到大腿面，肩到大腿的距离超过臂长）
     head: { x: 0, y: hipsY + m.torsoLen * 0.95, z: m.torsoLen * 0.29 },
@@ -257,8 +278,17 @@ function kneel(m: BodyMetrics): PoseTargets {
     effectors: {
       footL: { pos: { x: m.hipHalf, y: m.groundY + 0.131, z: fwd - m.shinLen }, pitchDeg: 52 },
       footR: { pos: { x: -m.hipHalf, y: m.groundY + 0.131, z: fwd - m.shinLen }, pitchDeg: 52 },
-      handL: { anchor: { part: 'leftThigh', t: 0.42, radialDeg: 8, gapM: 0.002 } },
-      handR: { anchor: { part: 'rightThigh', t: 0.42, radialDeg: 8, gapM: 0.002 } },
+      // 掌向显式给：掌心贴腿面（法向 = 大腿面朝上前，掌朝下前贴腿）；指尖同上交给前臂+旋出
+      handL: {
+        anchor: { part: 'leftThigh', t: 0.42, radialDeg: 8, gapM: 0.002 },
+        forward: { x: 0, y: -0.54, z: 0.84 },
+        normal: { x: 0, y: -0.84, z: -0.54 },
+      },
+      handR: {
+        anchor: { part: 'rightThigh', t: 0.42, radialDeg: 8, gapM: 0.002 },
+        forward: { x: 0, y: -0.54, z: 0.84 },
+        normal: { x: 0, y: -0.84, z: -0.54 },
+      },
     },
     head: { x: 0, y: hipsY + m.torsoLen * 0.95, z: m.torsoLen * 0.29 },
   }
@@ -325,12 +355,12 @@ export function applySemanticAction(
       effectors.handL = {
         pos: hangingArm(m, 'L'),
         forward: { x: 0, y: -1, z: 0 },
-        normal: { x: -1, y: 0, z: 0 },
+        normal: hangingPalm('L'),
       }
       effectors.handR = {
         pos: hangingArm(m, 'R'),
         forward: { x: 0, y: -1, z: 0 },
-        normal: { x: 1, y: 0, z: 0 },
+        normal: hangingPalm('R'),
       }
       break
   }

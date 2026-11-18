@@ -666,9 +666,15 @@ export class PoseSolver {
       // 确定函数，没有「姿势 → 采样 → 目标 → 姿势」的反馈环 → 平滑收敛 ✓。
       {
         const goal = g.pos.clone()
+        // 锚点目标跳过体积投影（2026-11-19）：锚点语义 = 接触点**贴在面上**
+        //（gapM 就是作者要的间隙），体积投影按整手采样往外推会和锚点打架 ——
+        // 掌心朝腿的坐姿手被推得悬空 37mm（HM08 指卷朝掌侧，掌朝腿时采样必
+        // 戳进腿面）。贴面 rests 由接触约束兜住 ✓；非锚点目标（裸位置拖拽）
+        // 仍要投影（拖进身体的目标必须推出体外 ✓）。
+        const anchored = this.targets.effectors[id]?.anchor !== undefined
         for (let i = 0; i < 2; i++) {
           goal.copy(this.clampToReachOf(id, goal))
-          this.projectOutOfBody(goal, id)
+          if (!anchored) this.projectOutOfBody(goal, id)
         }
         p.goal.copy(goal)
       }
@@ -1164,7 +1170,10 @@ export class PoseSolver {
       // 真实的手按在面上时指尖是顺着面滑的）。总偏角封顶 70°（腕背伸的解剖极限），
       // 残余的穿深由接触约束兜住（比腕折 90° 好看）。
       const fingersOut = this.keepFingersOut(target, flexClamped, side === 'Left' ? 'handL' : 'handR')
-      const desired = makeHandFrame(fingersOut, normal)
+      // keepFingersOut 的旋出再夹一次腕屈（2026-11-19 实测 run 右腕 44° > 上限：
+      // 旋出方向未必顺着眼前的屈曲面，叠加后能越过 40° 上限 → 视觉上又是耙子）
+      const fingersClamped = clampWristFlexion(fingersOut, foreDir, JOINT_LIMITS.wristFlexMaxDeg)
+      const desired = makeHandFrame(fingersClamped, normal)
       const elbowWorld = parentQuat.clone().multiply(ik.shoulderLocal).multiply(ik.elbowLocal)
       joints[wJoint] = localQuatToPoseEuler(solveHandOrientation(this.restFrames[side], desired, elbowWorld), zSign)
     }

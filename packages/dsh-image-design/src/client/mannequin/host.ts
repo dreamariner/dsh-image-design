@@ -330,7 +330,12 @@ export function createSolverHost(geom: MannequinGeometry, binding: RigBinding): 
     for (const vi of tipVerts) tips.add(posOf(vi))
     tips.multiplyScalar(1 / Math.max(1, tipVerts.length))
     const forward = tips.clone().sub(wrist).normalize()
-    // 掌心法向：取「法向指向身体中线」那半边的顶点法线均值
+    // 掌心法向：取「法向指向身体中线」那半边的顶点法线均值。
+    // ⚠ 过滤轴必须是 medial 本身（2026-11-19 实机修）：旧实现用
+    // axisNormal = cross(forward, medial) 过滤 —— 这个轴垂直于手轴与朝内方向，
+    // 实际选中的是**手背一侧**（HM08 绑定实测选中顶点法线均值 (0.99,0.08,−0.08)
+    // 朝外）→ rest 帧的「掌法线」实为手背方向 → 求解器把「手背」映射到目标的
+    // 「掌心」→ 所有姿势掌心整体翻 180°（手背贴腿、手指自然弯看着像反折）。
     const medial = new THREE.Vector3(-(Math.sign(wrist.x) || 1), 0, 0)
     const sideAxis = new THREE.Vector3().crossVectors(forward, medial).normalize()
     const axisNormal = new THREE.Vector3().crossVectors(forward, sideAxis).normalize()
@@ -344,7 +349,8 @@ export function createSolverHost(geom: MannequinGeometry, binding: RigBinding): 
       const nrm = new THREE.Vector3(
         geom.bindNormals[vi * 3], geom.bindNormals[vi * 3 + 1], geom.bindNormals[vi * 3 + 2],
       )
-      if (nrm.dot(axisNormal) <= 0) continue
+      // 掌侧 = 法线带朝内分量（身体中线方向）
+      if (nrm.dot(medial) <= 0) continue
       acc.add(nrm)
     }
     const palmNormal = acc.lengthSq() > 1e-12 ? acc.normalize() : axisNormal.clone()

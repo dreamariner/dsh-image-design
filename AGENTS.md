@@ -329,3 +329,10 @@ pnpm dsh:probe      # 连实例验证本插件装载且 active（pluginInventory
 - **typert 纪律**：face 方法只声明在 `src/remote.ts`；协议包 devDep 必须裸精确版本（放宽会让 vendor 副本成为合法候选）；zod 必须留在 dependencies（生成产物 import 它）。
 - **实例固定经 `pnpm dsh:start` 启动**：打包版要带 `--inspect` 才有 inspector，Dock 直启的实例 stop / restart 管不了；启动前构建门失败会阻断（lib 不入库，没有旧产物可跑）。
 - **行文不用破折号「——」**（zero 知识库行文规范，2026-11-01 起）。
+
+- **素体求解/渲染不能只挂在 rAF 上**（2026-11-19 实机修复）：窗口失焦/被遮挡时
+  Chromium 暂停 rAF（页面自报 visible+focus 也可能停），求解器跟着停摆、画布
+  **冻在绑定姿态帧**——HM08 绑定手骨天生弯 ~38°，用户看到的就是「弯手」截图。
+  修法：渲染循环抽 tickBody，250ms 兜底定时器发现 `performance.now()−lastTickAt
+  > 450ms` 就接管推进 + 补渲染（rAF 正常时零开销；页面隐藏时定时器被钳到 1s
+  也能收敛）。`__mannequinDebug.forceStep` 供实机诊断手动推求解。

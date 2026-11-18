@@ -403,6 +403,8 @@ export function createViewer(
           settled: () => solver?.settled() ?? true,
           mode: () => mode,
           metrics: () => metrics,
+          // 实机诊断用：rAF 被节流时手动推求解（页面控制台/自动化探针调）
+          forceStep: (substeps?: number) => (solver === null ? null : solver.step(substeps ?? 8)),
         }
         dirty = true
         resolve()
@@ -436,17 +438,30 @@ export function createViewer(
 
   // 按需渲染循环
   let raf = 0
-  const tick = (): void => {
-    if (disposed) return
+  let lastTickAt = 0
+  const tickBody = (): void => {
+    lastTickAt = performance.now()
     // 物理推进：没落定就继续走（定步长 → 确定性 ✓）；落定后零开销 ✓
     if (solver !== null && !solver.settled()) {
       const joints = solver.step(8)
       applyPose(joints, currentTargets?.root)
     }
     if (dirty) { renderer.render(scene, camera); dirty = false }
+  }
+  const tick = (): void => {
+    if (disposed) return
+    tickBody()
     raf = requestAnimationFrame(tick)
   }
   raf = requestAnimationFrame(tick)
+  // RAF 停摆兜底（2026-11-19 实机）：窗口失焦/被遮挡时 Chromium 暂停 rAF，
+  // 求解器跟着停摆，画布**冻在绑定姿态**（HM08 绑定手骨天生弯 ~38°，实机
+  // 「弯手」截图即此帧）。定时器兜底接管：rAF 正常时只刷时间戳（零开销），
+  // rAF 停了就推进求解 + 补渲染；页面隐藏时定时器被钳到 1s 也能收敛 ✓。
+  const fallbackTimer = setInterval(() => {
+    if (disposed || performance.now() - lastTickAt < 450) return
+    tickBody()
+  }, 250)
 
   // ── 摆姿势：抓肢体拖动 ──
   /** 骨名 → 末端（手臂归手、小腿归脚）。 */
@@ -658,6 +673,7 @@ export function createViewer(
     dispose(): void {
       disposed = true
       cancelAnimationFrame(raf)
+      clearInterval(fallbackTimer)
       observer.disconnect()
       canvas.removeEventListener('pointerdown', onPointerDown)
       canvas.removeEventListener('pointermove', onPointerMove)

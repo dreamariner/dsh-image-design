@@ -71,6 +71,9 @@ export async function saveRefShot(deps: GenerationDeps, input: RefShotInput): Pr
     joints: input.joints,
     camera: input.camera,
     images: [{ file }],
+    ...(input.precise !== undefined ? { precise: input.precise } : {}),
+    ...(input.measured !== undefined ? { measured: input.measured } : {}),
+    ...(input.targets !== undefined ? { targets: input.targets } : {}),
     ...(input.note !== undefined && input.note !== '' ? { note: input.note } : {}),
   }
   await writeFile(join(dir, 'ref.json'), JSON.stringify(record, null, 2) + '\n', 'utf-8')

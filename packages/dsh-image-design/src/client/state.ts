@@ -6,9 +6,10 @@
 
 import { useSyncExternalStore } from 'react'
 import type { RefSummaryView, RunSummaryView, RunView } from './api.ts'
-import type { BodyParams } from './mannequin/body.ts'
-import type { AzimuthKind, ElevationKind, OrbitState, ShotKind } from './mannequin/camera.ts'
+import { DEFAULT_BREAST, DEFAULT_MACRO, type PreciseBodyParams } from './mannequin/shape3.ts'
+import type { OrbitState, ShotKind } from './mannequin/camera.ts'
 import type { CaptureLength, CaptureRatio } from './mannequin/capture.ts'
+import type { EndEffectorId, PoseTargets } from './mannequin/solver.ts'
 
 export type PanelTab = 'generate' | 'mannequin' | 'history'
 
@@ -43,15 +44,28 @@ export interface LightboxState {
   alt: string
 }
 
-/** 素体视图状态（体型 / 姿势 / 相机 / 拍摄档位 / 参考图列表）。 */
+/** 测量回显（目标 vs 实测）。 */
+export interface MeasureEcho {
+  name: string
+  targetCm: number
+  measuredCm: number
+}
+
+/** 素体视图状态（精确体型 / 姿势 / 相机 / 拍摄档位 / 参考图列表）。 */
 export interface MannequinState {
-  body: BodyParams
+  /** 精确素体参数（20 项 cm + 雕刻 + 宏观 + 身高）。 */
+  precise: PreciseBodyParams
+  /** 最近一次求解的测量实测回显。 */
+  measured: MeasureEcho[]
   poseId: string
+  /** 视口交互模式：转视角 / 摆姿势（issue 005）。 */
+  mode: 'orbit' | 'pose'
+  /** 意图目标（物理求解器的输入）：手/脚该在哪。手调后 poseId 置 'unknown'。 */
+  targets: PoseTargets | null
+  /** 面板里当前选中的末端（调目标用）。 */
+  selectedEnd: EndEffectorId
   shot: ShotKind
   orbit: OrbitState
-  /** 预设方位 / 俯仰（segmented 的值；拖拽会改 orbit 但保留最近预设选择）。 */
-  azimuth: AzimuthKind
-  elevation: ElevationKind
   length: CaptureLength
   ratio: CaptureRatio
   capturing: boolean
@@ -129,12 +143,20 @@ function initialState(): ClientState {
     historyLoading: false,
     now: Date.now(),
     man: {
-      body: { height: 170, headRatio: 7.5, shoulderWidth: 1, bust: 1, waist: 1, hip: 1, limbThickness: 1, armLength: 1, legLength: 1 },
+      precise: {
+        height: 170,
+        measurementsCm: {},
+        sculpt: {},
+        macro: { ...DEFAULT_MACRO },
+        breast: { ...DEFAULT_BREAST },
+      },
+      measured: [],
       poseId: 'a-pose',
+      mode: 'orbit',
+      targets: null,
+      selectedEnd: 'handL',
       shot: 'full',
       orbit: { azimuthDeg: 0, elevationDeg: 0, distanceScale: 1 },
-      azimuth: 'front',
-      elevation: 'level',
       length: 1024,
       ratio: '2:3',
       capturing: false,

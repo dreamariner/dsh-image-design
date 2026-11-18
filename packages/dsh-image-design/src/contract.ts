@@ -124,9 +124,95 @@ export interface BodyParamsSnapshot {
   [key: string]: number
 }
 
+/** 精确素体的宏观体型快照。 */
+export interface PreciseMacroSnapshot {
+  /** 性别 0=男性 1=女性。004 追加：HM08 中性网格上男女靠位移插值。 */
+  gender?: number
+  age: number
+  fat: number
+  muscle: number
+  /**
+   * @deprecated 004 早期字段（只有轮廓近似，无真性别维度）。
+   * 仅为读旧档保留：gender = femaleShape>0 ? 1 : maleShape>0 ? 0 : 0.5。
+   */
+  femaleShape?: number
+  /** @deprecated 同上。 */
+  maleShape?: number
+}
+
+/**
+ * 乳房形态快照（004 追加）。
+ * 与 cm 围度解耦：cup/firmness 决定胸型，bust-circ 只校准尺寸。
+ */
+export interface PreciseBreastSnapshot {
+  /** 罩杯 -1..1（mincup / averagecup / maxcup 三档插值）。 */
+  cup: number
+  /** 紧致度 -1..1（软塌下垂 ↔ 紧实上挺）。 */
+  firmness: number
+  /** 尖挺度 0..1。 */
+  point: number
+  /** 间距 0..1。 */
+  gap: number
+  /** 上提/下垂 -1..1。 */
+  droop: number
+  /** 乳头大小 0..1。 */
+  nipple: number
+}
+
+/** 精确素体参数快照（cm 级测量 + 雕刻 + 宏观）。 */
+export interface PreciseBodySnapshot {
+  height: number
+  /** 测量名 → 目标 cm（如 bust-circ: 92）。 */
+  measurementsCm: Record<string, number>
+  /** morph 名 → 雕刻权重。 */
+  sculpt: Record<string, number>
+  macro: PreciseMacroSnapshot
+  /** 乳房形态（004 追加；旧档无此字段走默认中性）。 */
+  breast?: PreciseBreastSnapshot
+}
+
+/** 测量回显快照（目标 vs 实测，拍参考图时钉死以证可复现）。 */
+export interface MeasureEchoSnapshot {
+  name: string
+  targetCm: number
+  measuredCm: number
+}
+
 /** 拍摄时钉死的相机参数快照。 */
 export interface CameraSnapshot {
   [key: string]: string | number
+}
+
+/** 意图目标里的单个末端目标（issue 005 的 wire 形状；与客户端 PoseTargets 同构）。 */
+export interface RefPoseTarget {
+  /** 固定位置（模型空间，米）。 */
+  pos?: { x: number; y: number; z: number }
+  /** 语义锚点：贴在某体段上（求解时按当前几何解析）。 */
+  anchor?: { part: string; t: number; radialDeg: number; gapM: number }
+  forward?: { x: number; y: number; z: number }
+  normal?: { x: number; y: number; z: number }
+  pitchDeg?: number
+  poleHint?: string
+}
+
+/**
+ * 意图目标（issue 005）：高层姿势意图（末端该在哪），进 ref.json。
+ *
+ * 为什么存意图而不只存关节表：关节表是**解算结果**，换个体型就复现不出；
+ * 意图是**作者意图**，回放时按当前体型重解，得到的仍是同一个姿势 ✓。
+ */
+export interface RefPoseTargets {
+  /** 根（骨盆）在模型空间的位置。 */
+  root: { x: number; y: number; z: number }
+  /**
+   * 各末端目标（缺省者不参与求解）。
+   *
+   * 值类型不带 undefined：wire 面必须全是 JSON 类型（typert 的边界闸会拒
+   * `T | undefined` 的索引签名）；「这个末端没目标」用**缺这个键**表达 ✓。
+   */
+  effectors: Record<string, RefPoseTarget>
+  /** 头部目标（模型空间，米）。 */
+  head?: { x: number; y: number; z: number }
 }
 
 /** 参考图清单（ref.json 内容，也是 readRefRecord 的 wire 返回形状）。 */
@@ -140,6 +226,12 @@ export interface RefShotRecord {
   joints: Record<string, { x: number; y: number; z: number }>
   camera: CameraSnapshot
   images: Array<{ file: string }>
+  /** 精确素体参数（004 新增；旧档无此字段，回放走 003 解析场）。 */
+  precise?: PreciseBodySnapshot
+  /** 精确测量的目标 vs 实测回显（004 新增）。 */
+  measured?: MeasureEchoSnapshot[]
+  /** 意图目标（issue 005 新增；旧档无此字段，回放走关节表）。 */
+  targets?: RefPoseTargets
   note?: string
 }
 
@@ -160,5 +252,9 @@ export interface RefShotInput {
   poseId: string
   joints: Record<string, { x: number; y: number; z: number }>
   camera: CameraSnapshot
+  precise?: PreciseBodySnapshot
+  measured?: MeasureEchoSnapshot[]
+  /** 意图目标（issue 005 新增；存了就能按当前体型重解回放）。 */
+  targets?: RefPoseTargets
   note?: string
 }

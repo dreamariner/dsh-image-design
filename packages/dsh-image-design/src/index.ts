@@ -10,7 +10,9 @@
 // 面：① Agent tool（dsh-image-design_generate，与面板 Remote 共用同一套 handlers）
 //      ② Typert Remote（client 数据通道，契约见 src/remote.ts）
 
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import { Config, resolveConfig, KNOWN_KEYS, type ImageDesignConfig } from './config.ts'
 import { defaultOutDir } from './out-dir.ts'
@@ -124,12 +126,27 @@ export function apply(ctx: Context, rawConfig?: Partial<ImageDesignConfig> | nul
   const config = resolveConfig(Config, rawConfig ?? {}, name)
   const log = (...args: unknown[]): void => { ctx.logger?.info?.(`[${name}]`, ...args) }
 
+  // 包根目录：lib/index.js → 上两级到包根。import.meta.url 在 tsdown 打包后
+  // 仍是本模块文件 URL，能稳定定位随包分发的 assets/（files 数组需含 assets）。
+  const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
+  // 白名单：只允许精确素体需要的 3 个资产，杜绝路径穿越（照抄 readRefImage 纪律）
+  const ASSET_ALLOWLIST = new Map([
+    ['mannequin-body.glb', 'model/gltf-binary'],
+    ['mannequin-morphs.bin', 'application/octet-stream'],
+    ['mannequin-morphs.json', 'application/json'],
+  ])
   const deps: ImageDesignDeps = {
     resolveOutDir: () => (config.outDir !== '' ? config.outDir : defaultOutDir(workspaceRootOf(ctx))),
     mmxBin: config.mmxBin,
     timeoutMs: config.timeoutMs,
     defaultModel: parseModel(config.defaultModel),
     log,
+    readAsset: async (name) => {
+      const mime = ASSET_ALLOWLIST.get(name)
+      if (mime === undefined) throw new Error(`[${name}] asset 不在白名单：${name}`)
+      const buf = await readFile(join(packageRoot, 'assets', name))
+      return { base64: buf.toString('base64'), mime }
+    },
   }
 
   // ── Typert Remote（client 数据通道）────────────────────────────────────

@@ -1,0 +1,1435 @@
+{
+  "version": 2,
+  "sourceCommit": "a8bc2d54ff0ac92e78ff71431b1023eda42bf482",
+  "baseMesh": "MakeHuman HM08 (CC0), body = 前 13380 顶点",
+  "unit": "base 与 target 位移均为分米制；围度测量求和后 ×10 得 cm",
+  "byteOrder": "little-endian; morph = u32 count + (u16 vertexIndex + f32 dx + f32 dy + f32 dz) × count",
+  "morphs": {
+    "armslegs/l-hand-fingers-diameter-decr": {
+      "offset": 0,
+      "count": 1461,
+      "bytes": 20458
+    },
+    "armslegs/l-hand-fingers-diameter-incr": {
+      "offset": 20458,
+      "count": 1474,
+      "bytes": 20640
+    },
+    "armslegs/l-hand-fingers-length-decr": {
+      "offset": 41098,
+      "count": 1280,
+      "bytes": 17924
+    },
+    "armslegs/l-hand-fingers-length-incr": {
+      "offset": 59022,
+      "count": 1266,
+      "bytes": 17728
+    },
+    "armslegs/l-hand-scale-decr": {
+      "offset": 76750,
+      "count": 1689,
+      "bytes": 23650
+    },
+    "armslegs/l-hand-scale-incr": {
+      "offset": 100400,
+      "count": 1689,
+      "bytes": 23650
+    },
+    "armslegs/l-leg-valgus-decr": {
+      "offset": 124050,
+      "count": 574,
+      "bytes": 8040
+    },
+    "armslegs/l-leg-valgus-incr": {
+      "offset": 132090,
+      "count": 475,
+      "bytes": 6654
+    },
+    "armslegs/l-lowerarm-fat-decr": {
+      "offset": 138744,
+      "count": 166,
+      "bytes": 2328
+    },
+    "armslegs/l-lowerarm-fat-incr": {
+      "offset": 141072,
+      "count": 421,
+      "bytes": 5898
+    },
+    "armslegs/l-lowerarm-muscle-decr": {
+      "offset": 146970,
+      "count": 226,
+      "bytes": 3168
+    },
+    "armslegs/l-lowerarm-muscle-incr": {
+      "offset": 150138,
+      "count": 155,
+      "bytes": 2174
+    },
+    "armslegs/l-lowerleg-muscle-decr": {
+      "offset": 152312,
+      "count": 172,
+      "bytes": 2412
+    },
+    "armslegs/l-lowerleg-muscle-incr": {
+      "offset": 154724,
+      "count": 176,
+      "bytes": 2468
+    },
+    "armslegs/l-upperarm-muscle-decr": {
+      "offset": 157192,
+      "count": 212,
+      "bytes": 2972
+    },
+    "armslegs/l-upperarm-muscle-incr": {
+      "offset": 160164,
+      "count": 209,
+      "bytes": 2930
+    },
+    "armslegs/l-upperleg-muscle-decr": {
+      "offset": 163094,
+      "count": 281,
+      "bytes": 3938
+    },
+    "armslegs/l-upperleg-muscle-incr": {
+      "offset": 167032,
+      "count": 262,
+      "bytes": 3672
+    },
+    "armslegs/r-hand-fingers-diameter-decr": {
+      "offset": 170704,
+      "count": 1461,
+      "bytes": 20458
+    },
+    "armslegs/r-hand-fingers-diameter-incr": {
+      "offset": 191162,
+      "count": 1474,
+      "bytes": 20640
+    },
+    "armslegs/r-hand-fingers-length-decr": {
+      "offset": 211802,
+      "count": 1280,
+      "bytes": 17924
+    },
+    "armslegs/r-hand-fingers-length-incr": {
+      "offset": 229726,
+      "count": 1266,
+      "bytes": 17728
+    },
+    "armslegs/r-hand-scale-decr": {
+      "offset": 247454,
+      "count": 1689,
+      "bytes": 23650
+    },
+    "armslegs/r-hand-scale-incr": {
+      "offset": 271104,
+      "count": 1689,
+      "bytes": 23650
+    },
+    "armslegs/r-leg-valgus-decr": {
+      "offset": 294754,
+      "count": 574,
+      "bytes": 8040
+    },
+    "armslegs/r-leg-valgus-incr": {
+      "offset": 302794,
+      "count": 475,
+      "bytes": 6654
+    },
+    "armslegs/r-lowerarm-fat-decr": {
+      "offset": 309448,
+      "count": 166,
+      "bytes": 2328
+    },
+    "armslegs/r-lowerarm-fat-incr": {
+      "offset": 311776,
+      "count": 421,
+      "bytes": 5898
+    },
+    "armslegs/r-lowerarm-muscle-decr": {
+      "offset": 317674,
+      "count": 226,
+      "bytes": 3168
+    },
+    "armslegs/r-lowerarm-muscle-incr": {
+      "offset": 320842,
+      "count": 155,
+      "bytes": 2174
+    },
+    "armslegs/r-lowerleg-muscle-decr": {
+      "offset": 323016,
+      "count": 172,
+      "bytes": 2412
+    },
+    "armslegs/r-lowerleg-muscle-incr": {
+      "offset": 325428,
+      "count": 168,
+      "bytes": 2356
+    },
+    "armslegs/r-upperarm-muscle-decr": {
+      "offset": 327784,
+      "count": 212,
+      "bytes": 2972
+    },
+    "armslegs/r-upperarm-muscle-incr": {
+      "offset": 330756,
+      "count": 209,
+      "bytes": 2930
+    },
+    "armslegs/r-upperleg-muscle-decr": {
+      "offset": 333686,
+      "count": 281,
+      "bytes": 3938
+    },
+    "armslegs/r-upperleg-muscle-incr": {
+      "offset": 337624,
+      "count": 262,
+      "bytes": 3672
+    },
+    "bodyshapes/bodyshapes-elvs-fem-apple": {
+      "offset": 341296,
+      "count": 2772,
+      "bytes": 38812
+    },
+    "bodyshapes/bodyshapes-elvs-fem-neat-hourglass": {
+      "offset": 380108,
+      "count": 2454,
+      "bytes": 34360
+    },
+    "bodyshapes/bodyshapes-elvs-fem-rectangle": {
+      "offset": 414468,
+      "count": 2475,
+      "bytes": 34654
+    },
+    "bodyshapes/bodyshapes-elvs-fem-triangle": {
+      "offset": 449122,
+      "count": 2793,
+      "bytes": 39106
+    },
+    "bodyshapes/bodyshapes-elvs-man-apple": {
+      "offset": 488228,
+      "count": 1831,
+      "bytes": 25638
+    },
+    "bodyshapes/bodyshapes-elvs-man-rectangle": {
+      "offset": 513866,
+      "count": 845,
+      "bytes": 11834
+    },
+    "bodyshapes/bodyshapes-elvs-man-trapezoid": {
+      "offset": 525700,
+      "count": 2600,
+      "bytes": 36404
+    },
+    "bodyshapes/bodyshapes-elvs-man-triangle": {
+      "offset": 562104,
+      "count": 2144,
+      "bytes": 30020
+    },
+    "breast/breast-dist-decr": {
+      "offset": 592124,
+      "count": 297,
+      "bytes": 4162
+    },
+    "breast/breast-dist-incr": {
+      "offset": 596286,
+      "count": 290,
+      "bytes": 4064
+    },
+    "breast/breast-point-decr": {
+      "offset": 600350,
+      "count": 283,
+      "bytes": 3966
+    },
+    "breast/breast-point-incr": {
+      "offset": 604316,
+      "count": 210,
+      "bytes": 2944
+    },
+    "breast/breast-trans-down": {
+      "offset": 607260,
+      "count": 593,
+      "bytes": 8306
+    },
+    "breast/breast-trans-up": {
+      "offset": 615566,
+      "count": 583,
+      "bytes": 8166
+    },
+    "breast/breast-volume-vert-down": {
+      "offset": 623732,
+      "count": 244,
+      "bytes": 3420
+    },
+    "breast/breast-volume-vert-up": {
+      "offset": 627152,
+      "count": 369,
+      "bytes": 5170
+    },
+    "breast/female-young-averagemuscle-averageweight-averagecup-maxfirmness": {
+      "offset": 632322,
+      "count": 284,
+      "bytes": 3980
+    },
+    "breast/female-young-averagemuscle-averageweight-averagecup-minfirmness": {
+      "offset": 636302,
+      "count": 252,
+      "bytes": 3532
+    },
+    "breast/female-young-averagemuscle-averageweight-maxcup-averagefirmness": {
+      "offset": 639834,
+      "count": 404,
+      "bytes": 5660
+    },
+    "breast/female-young-averagemuscle-averageweight-maxcup-maxfirmness": {
+      "offset": 645494,
+      "count": 408,
+      "bytes": 5716
+    },
+    "breast/female-young-averagemuscle-averageweight-maxcup-minfirmness": {
+      "offset": 651210,
+      "count": 463,
+      "bytes": 6486
+    },
+    "breast/female-young-averagemuscle-averageweight-mincup-averagefirmness": {
+      "offset": 657696,
+      "count": 402,
+      "bytes": 5632
+    },
+    "breast/female-young-averagemuscle-averageweight-mincup-maxfirmness": {
+      "offset": 663328,
+      "count": 402,
+      "bytes": 5632
+    },
+    "breast/female-young-averagemuscle-averageweight-mincup-minfirmness": {
+      "offset": 668960,
+      "count": 402,
+      "bytes": 5632
+    },
+    "breast/nipple-point-decr": {
+      "offset": 674592,
+      "count": 32,
+      "bytes": 452
+    },
+    "breast/nipple-point-incr": {
+      "offset": 675044,
+      "count": 32,
+      "bytes": 452
+    },
+    "breast/nipple-size-decr": {
+      "offset": 675496,
+      "count": 162,
+      "bytes": 2272
+    },
+    "breast/nipple-size-incr": {
+      "offset": 677768,
+      "count": 32,
+      "bytes": 452
+    },
+    "buttocks/buttocks-volume-decr": {
+      "offset": 678220,
+      "count": 203,
+      "bytes": 2846
+    },
+    "buttocks/buttocks-volume-incr": {
+      "offset": 681066,
+      "count": 526,
+      "bytes": 7368
+    },
+    "cheek/l-cheek-bones-decr": {
+      "offset": 688434,
+      "count": 91,
+      "bytes": 1278
+    },
+    "cheek/l-cheek-bones-incr": {
+      "offset": 689712,
+      "count": 63,
+      "bytes": 886
+    },
+    "cheek/l-cheek-volume-decr": {
+      "offset": 690598,
+      "count": 194,
+      "bytes": 2720
+    },
+    "cheek/l-cheek-volume-incr": {
+      "offset": 693318,
+      "count": 229,
+      "bytes": 3210
+    },
+    "cheek/r-cheek-bones-decr": {
+      "offset": 696528,
+      "count": 91,
+      "bytes": 1278
+    },
+    "cheek/r-cheek-bones-incr": {
+      "offset": 697806,
+      "count": 63,
+      "bytes": 886
+    },
+    "cheek/r-cheek-volume-decr": {
+      "offset": 698692,
+      "count": 194,
+      "bytes": 2720
+    },
+    "cheek/r-cheek-volume-incr": {
+      "offset": 701412,
+      "count": 229,
+      "bytes": 3210
+    },
+    "chin/chin-height-decr": {
+      "offset": 704622,
+      "count": 257,
+      "bytes": 3602
+    },
+    "chin/chin-height-incr": {
+      "offset": 708224,
+      "count": 480,
+      "bytes": 6724
+    },
+    "chin/chin-prominent-decr": {
+      "offset": 714948,
+      "count": 173,
+      "bytes": 2426
+    },
+    "chin/chin-prominent-incr": {
+      "offset": 717374,
+      "count": 108,
+      "bytes": 1516
+    },
+    "chin/chin-width-decr": {
+      "offset": 718890,
+      "count": 142,
+      "bytes": 1992
+    },
+    "chin/chin-width-incr": {
+      "offset": 720882,
+      "count": 198,
+      "bytes": 2776
+    },
+    "ears/l-ear-scale-decr": {
+      "offset": 723658,
+      "count": 505,
+      "bytes": 7074
+    },
+    "ears/l-ear-scale-incr": {
+      "offset": 730732,
+      "count": 508,
+      "bytes": 7116
+    },
+    "ears/r-ear-scale-decr": {
+      "offset": 737848,
+      "count": 505,
+      "bytes": 7074
+    },
+    "ears/r-ear-scale-incr": {
+      "offset": 744922,
+      "count": 508,
+      "bytes": 7116
+    },
+    "eyebrows/eyebrows-angle-down": {
+      "offset": 752038,
+      "count": 554,
+      "bytes": 7760
+    },
+    "eyebrows/eyebrows-angle-up": {
+      "offset": 759798,
+      "count": 314,
+      "bytes": 4400
+    },
+    "eyes/l-eye-scale-decr": {
+      "offset": 764198,
+      "count": 469,
+      "bytes": 6570
+    },
+    "eyes/l-eye-scale-incr": {
+      "offset": 770768,
+      "count": 502,
+      "bytes": 7032
+    },
+    "eyes/r-eye-scale-decr": {
+      "offset": 777800,
+      "count": 469,
+      "bytes": 6570
+    },
+    "eyes/r-eye-scale-incr": {
+      "offset": 784370,
+      "count": 469,
+      "bytes": 6570
+    },
+    "forehead/forehead-scale-vert-decr": {
+      "offset": 790940,
+      "count": 144,
+      "bytes": 2020
+    },
+    "forehead/forehead-scale-vert-incr": {
+      "offset": 792960,
+      "count": 140,
+      "bytes": 1964
+    },
+    "forehead/forehead-temple-decr": {
+      "offset": 794924,
+      "count": 104,
+      "bytes": 1460
+    },
+    "forehead/forehead-temple-incr": {
+      "offset": 796384,
+      "count": 258,
+      "bytes": 3616
+    },
+    "head/head-age-decr": {
+      "offset": 800000,
+      "count": 3581,
+      "bytes": 50138
+    },
+    "head/head-age-incr": {
+      "offset": 850138,
+      "count": 2888,
+      "bytes": 40436
+    },
+    "head/head-fat-decr": {
+      "offset": 890574,
+      "count": 794,
+      "bytes": 11120
+    },
+    "head/head-fat-incr": {
+      "offset": 901694,
+      "count": 742,
+      "bytes": 10392
+    },
+    "head/head-oval": {
+      "offset": 912086,
+      "count": 1885,
+      "bytes": 26394
+    },
+    "head/head-round": {
+      "offset": 938480,
+      "count": 1786,
+      "bytes": 25008
+    },
+    "head/head-scale-depth-decr": {
+      "offset": 963488,
+      "count": 3554,
+      "bytes": 49760
+    },
+    "head/head-scale-depth-incr": {
+      "offset": 1013248,
+      "count": 3590,
+      "bytes": 50264
+    },
+    "head/head-scale-horiz-decr": {
+      "offset": 1063512,
+      "count": 4160,
+      "bytes": 58244
+    },
+    "head/head-scale-horiz-incr": {
+      "offset": 1121756,
+      "count": 4160,
+      "bytes": 58244
+    },
+    "head/head-scale-vert-decr": {
+      "offset": 1180000,
+      "count": 4211,
+      "bytes": 58958
+    },
+    "head/head-scale-vert-incr": {
+      "offset": 1238958,
+      "count": 4247,
+      "bytes": 59462
+    },
+    "head/head-square": {
+      "offset": 1298420,
+      "count": 537,
+      "bytes": 7522
+    },
+    "hip/hip-scale-depth-decr": {
+      "offset": 1305942,
+      "count": 1198,
+      "bytes": 16776
+    },
+    "hip/hip-scale-depth-incr": {
+      "offset": 1322718,
+      "count": 1190,
+      "bytes": 16664
+    },
+    "hip/hip-scale-horiz-decr": {
+      "offset": 1339382,
+      "count": 1110,
+      "bytes": 15544
+    },
+    "hip/hip-scale-horiz-incr": {
+      "offset": 1354926,
+      "count": 1110,
+      "bytes": 15544
+    },
+    "hip/hip-scale-vert-decr": {
+      "offset": 1370470,
+      "count": 1092,
+      "bytes": 15292
+    },
+    "hip/hip-scale-vert-incr": {
+      "offset": 1385762,
+      "count": 1082,
+      "bytes": 15152
+    },
+    "macrodetails/caucasian-female-young": {
+      "offset": 1400914,
+      "count": 13380,
+      "bytes": 187324
+    },
+    "macrodetails/caucasian-male-young": {
+      "offset": 1588238,
+      "count": 13380,
+      "bytes": 187324
+    },
+    "measure/measure-ankle-circ-decr": {
+      "offset": 1775562,
+      "count": 506,
+      "bytes": 7088
+    },
+    "measure/measure-ankle-circ-incr": {
+      "offset": 1782650,
+      "count": 506,
+      "bytes": 7088
+    },
+    "measure/measure-bust-circ-decr": {
+      "offset": 1789738,
+      "count": 1170,
+      "bytes": 16384
+    },
+    "measure/measure-bust-circ-incr": {
+      "offset": 1806122,
+      "count": 1273,
+      "bytes": 17826
+    },
+    "measure/measure-calf-circ-decr": {
+      "offset": 1823948,
+      "count": 404,
+      "bytes": 5660
+    },
+    "measure/measure-calf-circ-incr": {
+      "offset": 1829608,
+      "count": 404,
+      "bytes": 5660
+    },
+    "measure/measure-frontchest-dist-decr": {
+      "offset": 1835268,
+      "count": 600,
+      "bytes": 8404
+    },
+    "measure/measure-frontchest-dist-incr": {
+      "offset": 1843672,
+      "count": 533,
+      "bytes": 7466
+    },
+    "measure/measure-hips-circ-decr": {
+      "offset": 1851138,
+      "count": 692,
+      "bytes": 9692
+    },
+    "measure/measure-hips-circ-incr": {
+      "offset": 1860830,
+      "count": 707,
+      "bytes": 9902
+    },
+    "measure/measure-knee-circ-decr": {
+      "offset": 1870732,
+      "count": 532,
+      "bytes": 7452
+    },
+    "measure/measure-knee-circ-incr": {
+      "offset": 1878184,
+      "count": 536,
+      "bytes": 7508
+    },
+    "measure/measure-lowerarm-length-decr": {
+      "offset": 1885692,
+      "count": 3714,
+      "bytes": 52000
+    },
+    "measure/measure-lowerarm-length-incr": {
+      "offset": 1937692,
+      "count": 3584,
+      "bytes": 50180
+    },
+    "measure/measure-lowerleg-height-decr": {
+      "offset": 1987872,
+      "count": 2612,
+      "bytes": 36572
+    },
+    "measure/measure-lowerleg-height-incr": {
+      "offset": 2024444,
+      "count": 2564,
+      "bytes": 35900
+    },
+    "measure/measure-napetowaist-dist-decr": {
+      "offset": 2060344,
+      "count": 9992,
+      "bytes": 139892
+    },
+    "measure/measure-napetowaist-dist-incr": {
+      "offset": 2200236,
+      "count": 9986,
+      "bytes": 139808
+    },
+    "measure/measure-neck-circ-decr": {
+      "offset": 2340044,
+      "count": 384,
+      "bytes": 5380
+    },
+    "measure/measure-neck-circ-incr": {
+      "offset": 2345424,
+      "count": 672,
+      "bytes": 9412
+    },
+    "measure/measure-neck-height-decr": {
+      "offset": 2354836,
+      "count": 4350,
+      "bytes": 60904
+    },
+    "measure/measure-neck-height-incr": {
+      "offset": 2415740,
+      "count": 4350,
+      "bytes": 60904
+    },
+    "measure/measure-shoulder-dist-decr": {
+      "offset": 2476644,
+      "count": 4718,
+      "bytes": 66056
+    },
+    "measure/measure-shoulder-dist-incr": {
+      "offset": 2542700,
+      "count": 4524,
+      "bytes": 63340
+    },
+    "measure/measure-thigh-circ-decr": {
+      "offset": 2606040,
+      "count": 548,
+      "bytes": 7676
+    },
+    "measure/measure-thigh-circ-incr": {
+      "offset": 2613716,
+      "count": 551,
+      "bytes": 7718
+    },
+    "measure/measure-underbust-circ-decr": {
+      "offset": 2621434,
+      "count": 1137,
+      "bytes": 15922
+    },
+    "measure/measure-underbust-circ-incr": {
+      "offset": 2637356,
+      "count": 1149,
+      "bytes": 16090
+    },
+    "measure/measure-upperarm-circ-decr": {
+      "offset": 2653446,
+      "count": 540,
+      "bytes": 7564
+    },
+    "measure/measure-upperarm-circ-incr": {
+      "offset": 2661010,
+      "count": 540,
+      "bytes": 7564
+    },
+    "measure/measure-upperarm-length-decr": {
+      "offset": 2668574,
+      "count": 4156,
+      "bytes": 58188
+    },
+    "measure/measure-upperarm-length-incr": {
+      "offset": 2726762,
+      "count": 4156,
+      "bytes": 58188
+    },
+    "measure/measure-upperleg-height-decr": {
+      "offset": 2784950,
+      "count": 3309,
+      "bytes": 46330
+    },
+    "measure/measure-upperleg-height-incr": {
+      "offset": 2831280,
+      "count": 3166,
+      "bytes": 44328
+    },
+    "measure/measure-waist-circ-decr": {
+      "offset": 2875608,
+      "count": 862,
+      "bytes": 12072
+    },
+    "measure/measure-waist-circ-incr": {
+      "offset": 2887680,
+      "count": 862,
+      "bytes": 12072
+    },
+    "measure/measure-waisttohip-dist-decr": {
+      "offset": 2899752,
+      "count": 10120,
+      "bytes": 141684
+    },
+    "measure/measure-waisttohip-dist-incr": {
+      "offset": 3041436,
+      "count": 9924,
+      "bytes": 138940
+    },
+    "measure/measure-wrist-circ-decr": {
+      "offset": 3180376,
+      "count": 468,
+      "bytes": 6556
+    },
+    "measure/measure-wrist-circ-incr": {
+      "offset": 3186932,
+      "count": 474,
+      "bytes": 6640
+    },
+    "mouth/mouth-lowerlip-volume-decr": {
+      "offset": 3193572,
+      "count": 72,
+      "bytes": 1012
+    },
+    "mouth/mouth-lowerlip-volume-incr": {
+      "offset": 3194584,
+      "count": 187,
+      "bytes": 2622
+    },
+    "mouth/mouth-scale-horiz-decr": {
+      "offset": 3197206,
+      "count": 710,
+      "bytes": 9944
+    },
+    "mouth/mouth-scale-horiz-incr": {
+      "offset": 3207150,
+      "count": 876,
+      "bytes": 12268
+    },
+    "neck/neck-double-decr": {
+      "offset": 3219418,
+      "count": 160,
+      "bytes": 2244
+    },
+    "neck/neck-double-incr": {
+      "offset": 3221662,
+      "count": 188,
+      "bytes": 2636
+    },
+    "neck/neck-scale-horiz-decr": {
+      "offset": 3224298,
+      "count": 424,
+      "bytes": 5940
+    },
+    "neck/neck-scale-horiz-incr": {
+      "offset": 3230238,
+      "count": 556,
+      "bytes": 7788
+    },
+    "nose/nose-base-down": {
+      "offset": 3238026,
+      "count": 311,
+      "bytes": 4358
+    },
+    "nose/nose-base-up": {
+      "offset": 3242384,
+      "count": 305,
+      "bytes": 4274
+    },
+    "nose/nose-flaring-decr": {
+      "offset": 3246658,
+      "count": 158,
+      "bytes": 2216
+    },
+    "nose/nose-flaring-incr": {
+      "offset": 3248874,
+      "count": 138,
+      "bytes": 1936
+    },
+    "nose/nose-hump-decr": {
+      "offset": 3250810,
+      "count": 30,
+      "bytes": 424
+    },
+    "nose/nose-hump-incr": {
+      "offset": 3251234,
+      "count": 414,
+      "bytes": 5800
+    },
+    "nose/nose-scale-horiz-decr": {
+      "offset": 3257034,
+      "count": 312,
+      "bytes": 4372
+    },
+    "nose/nose-scale-horiz-incr": {
+      "offset": 3261406,
+      "count": 494,
+      "bytes": 6920
+    },
+    "nose/nose-scale-vert-decr": {
+      "offset": 3268326,
+      "count": 349,
+      "bytes": 4890
+    },
+    "nose/nose-scale-vert-incr": {
+      "offset": 3273216,
+      "count": 407,
+      "bytes": 5702
+    },
+    "pelvis/pelvis-tone-decr": {
+      "offset": 3278918,
+      "count": 221,
+      "bytes": 3098
+    },
+    "pelvis/pelvis-tone-incr": {
+      "offset": 3282016,
+      "count": 488,
+      "bytes": 6836
+    },
+    "stomach/stomach-pregnant-incr": {
+      "offset": 3288852,
+      "count": 350,
+      "bytes": 4904
+    },
+    "stomach/stomach-tone-decr": {
+      "offset": 3293756,
+      "count": 199,
+      "bytes": 2790
+    },
+    "stomach/stomach-tone-incr": {
+      "offset": 3296546,
+      "count": 175,
+      "bytes": 2454
+    },
+    "torso/torso-muscle-pectoral-decr": {
+      "offset": 3299000,
+      "count": 470,
+      "bytes": 6584
+    },
+    "torso/torso-muscle-pectoral-incr": {
+      "offset": 3305584,
+      "count": 472,
+      "bytes": 6612
+    },
+    "torso/torso-scale-horiz-decr": {
+      "offset": 3312196,
+      "count": 5866,
+      "bytes": 82128
+    },
+    "torso/torso-scale-horiz-incr": {
+      "offset": 3394324,
+      "count": 5526,
+      "bytes": 77368
+    },
+    "torso/torso-vshape-decr": {
+      "offset": 3471692,
+      "count": 5088,
+      "bytes": 71236
+    },
+    "torso/torso-vshape-incr": {
+      "offset": 3542928,
+      "count": 5036,
+      "bytes": 70508
+    }
+  },
+  "measurements": [
+    {
+      "name": "neck-circ",
+      "target": "measure-neck-circ",
+      "baseCm": 30.6
+    },
+    {
+      "name": "neck-height",
+      "target": "measure-neck-height",
+      "baseCm": 10.55
+    },
+    {
+      "name": "upperarm-circ",
+      "target": "measure-upperarm-circ",
+      "baseCm": 24.1
+    },
+    {
+      "name": "upperarm-length",
+      "target": "measure-upperarm-length",
+      "baseCm": 23.55
+    },
+    {
+      "name": "lowerarm-length",
+      "target": "measure-lowerarm-length",
+      "baseCm": 21.87
+    },
+    {
+      "name": "wrist-circ",
+      "target": "measure-wrist-circ",
+      "baseCm": 12.91
+    },
+    {
+      "name": "frontchest-dist",
+      "target": "measure-frontchest-dist",
+      "baseCm": 27.18
+    },
+    {
+      "name": "bust-circ",
+      "target": "measure-bust-circ",
+      "baseCm": 80.42
+    },
+    {
+      "name": "underbust-circ",
+      "target": "measure-underbust-circ",
+      "baseCm": 67.45
+    },
+    {
+      "name": "waist-circ",
+      "target": "measure-waist-circ",
+      "baseCm": 75.13
+    },
+    {
+      "name": "napetowaist-dist",
+      "target": "measure-napetowaist-dist",
+      "baseCm": 36.6
+    },
+    {
+      "name": "waisttohip-dist",
+      "target": "measure-waisttohip-dist",
+      "baseCm": 19.89
+    },
+    {
+      "name": "shoulder-dist",
+      "target": "measure-shoulder-dist",
+      "baseCm": 14.73
+    },
+    {
+      "name": "hips-circ",
+      "target": "measure-hips-circ",
+      "baseCm": 97.4
+    },
+    {
+      "name": "upperleg-height",
+      "target": "measure-upperleg-height",
+      "baseCm": 37.99
+    },
+    {
+      "name": "thigh-circ",
+      "target": "measure-thigh-circ",
+      "baseCm": 52.94
+    },
+    {
+      "name": "lowerleg-height",
+      "target": "measure-lowerleg-height",
+      "baseCm": 45.96
+    },
+    {
+      "name": "calf-circ",
+      "target": "measure-calf-circ",
+      "baseCm": 35.55
+    },
+    {
+      "name": "knee-circ",
+      "target": "measure-knee-circ",
+      "baseCm": 34.61
+    },
+    {
+      "name": "ankle-circ",
+      "target": "measure-ankle-circ",
+      "baseCm": 21.06
+    },
+    {
+      "name": "shoulder-breadth",
+      "target": "measure-shoulder-dist",
+      "morph": "measure/measure-shoulder-dist",
+      "baseCm": 37.29
+    }
+  ],
+  "rings": {
+    "measure-neck-circ": [
+      7514,
+      10358,
+      7631,
+      7496,
+      7488,
+      7489,
+      7474,
+      7475,
+      7531,
+      7537,
+      7543,
+      7549,
+      7555,
+      7561,
+      7743,
+      7722,
+      856,
+      1030,
+      1051,
+      850,
+      844,
+      838,
+      832,
+      826,
+      820,
+      756,
+      755,
+      770,
+      769,
+      777,
+      929,
+      3690,
+      804,
+      800,
+      808,
+      801,
+      799,
+      803,
+      7513,
+      7515,
+      7521,
+      7514
+    ],
+    "measure-neck-height": [
+      853,
+      854,
+      855,
+      856,
+      857,
+      858,
+      1496,
+      1491
+    ],
+    "measure-upperarm-circ": [
+      8383,
+      8393,
+      8392,
+      8391,
+      8390,
+      8394,
+      8395,
+      8399,
+      10455,
+      10516,
+      8396,
+      8397,
+      8398,
+      8388,
+      8387,
+      8386,
+      10431,
+      8385,
+      8384,
+      8389
+    ],
+    "measure-upperarm-length": [
+      8274,
+      10037
+    ],
+    "measure-lowerarm-length": [
+      10040,
+      10548
+    ],
+    "measure-wrist-circ": [
+      10208,
+      10211,
+      10212,
+      10216,
+      10471,
+      10533,
+      10213,
+      10214,
+      10215,
+      10205,
+      10204,
+      10203,
+      10437,
+      10202,
+      10201,
+      10206,
+      10200,
+      10210,
+      10209,
+      10208
+    ],
+    "measure-frontchest-dist": [
+      1437,
+      8125
+    ],
+    "measure-bust-circ": [
+      8439,
+      8455,
+      8462,
+      8446,
+      8478,
+      8494,
+      8557,
+      8510,
+      8526,
+      8542,
+      10720,
+      10601,
+      10603,
+      10602,
+      10612,
+      10611,
+      10610,
+      10613,
+      10604,
+      10605,
+      10606,
+      3942,
+      3941,
+      3940,
+      3950,
+      3947,
+      3948,
+      3949,
+      3938,
+      3939,
+      3937,
+      4065,
+      1870,
+      1854,
+      1838,
+      1885,
+      1822,
+      1806,
+      1774,
+      1790,
+      1783,
+      1767,
+      1799,
+      8471
+    ],
+    "measure-underbust-circ": [
+      10750,
+      10744,
+      10724,
+      10725,
+      10748,
+      10722,
+      10640,
+      10642,
+      10641,
+      10651,
+      10650,
+      10649,
+      10652,
+      10643,
+      10644,
+      10645,
+      10646,
+      10647,
+      10648,
+      3988,
+      3987,
+      3986,
+      3985,
+      3984,
+      3983,
+      3982,
+      3992,
+      3989,
+      3990,
+      3991,
+      3980,
+      3981,
+      3979,
+      4067,
+      4098,
+      4073,
+      4072,
+      4094,
+      4100,
+      4082,
+      4088,
+      4088
+    ],
+    "measure-waist-circ": [
+      4121,
+      10760,
+      10757,
+      10777,
+      10776,
+      10779,
+      10780,
+      10778,
+      10781,
+      10771,
+      10773,
+      10772,
+      10775,
+      10774,
+      10814,
+      10834,
+      10816,
+      10817,
+      10818,
+      10819,
+      10820,
+      10821,
+      4181,
+      4180,
+      4179,
+      4178,
+      4177,
+      4176,
+      4175,
+      4196,
+      4173,
+      4131,
+      4132,
+      4129,
+      4130,
+      4128,
+      4138,
+      4135,
+      4137,
+      4136,
+      4133,
+      4134,
+      4108,
+      4113,
+      4118,
+      4121
+    ],
+    "measure-napetowaist-dist": [
+      1491,
+      4181
+    ],
+    "measure-waisttohip-dist": [
+      4121,
+      4341
+    ],
+    "measure-shoulder-dist": [
+      7478,
+      8274
+    ],
+    "measure-hips-circ": [
+      4341,
+      10968,
+      10969,
+      10971,
+      10970,
+      10967,
+      10928,
+      10927,
+      10925,
+      10926,
+      10923,
+      10924,
+      10868,
+      10875,
+      10861,
+      10862,
+      4228,
+      4227,
+      4226,
+      4242,
+      4234,
+      4294,
+      4293,
+      4296,
+      4295,
+      4297,
+      4298,
+      4342,
+      4345,
+      4346,
+      4344,
+      4343,
+      4361,
+      4341
+    ],
+    "measure-upperleg-height": [
+      10970,
+      11230
+    ],
+    "measure-thigh-circ": [
+      11071,
+      11080,
+      11081,
+      11086,
+      11076,
+      11077,
+      11074,
+      11075,
+      11072,
+      11073,
+      11069,
+      11070,
+      11087,
+      11085,
+      11084,
+      12994,
+      11083,
+      11082,
+      11079,
+      11071
+    ],
+    "measure-lowerleg-height": [
+      11225,
+      12820
+    ],
+    "measure-calf-circ": [
+      11339,
+      11336,
+      11353,
+      11351,
+      11350,
+      13008,
+      11349,
+      11348,
+      11345,
+      11337,
+      11344,
+      11346,
+      11347,
+      11352,
+      11342,
+      11343,
+      11340,
+      11341,
+      11338,
+      11339
+    ],
+    "measure-ankle-circ": [
+      11460,
+      11464,
+      11458,
+      11459,
+      11419,
+      11418,
+      12958,
+      12965,
+      12960,
+      12963,
+      12961,
+      12962,
+      12964,
+      12927,
+      13028,
+      12957,
+      11463,
+      11461,
+      11457,
+      11460
+    ],
+    "measure-knee-circ": [
+      11223,
+      11230,
+      11232,
+      11233,
+      11238,
+      11228,
+      11229,
+      11226,
+      11227,
+      11224,
+      11225,
+      11221,
+      11222,
+      11239,
+      11237,
+      11236,
+      13002,
+      11235,
+      11234,
+      11223
+    ],
+    "measure-shoulder-breadth": [
+      1602,
+      8274
+    ]
+  }
+}

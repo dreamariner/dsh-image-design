@@ -53,6 +53,13 @@ export class ImageDesignRemote extends TypertRemoteService {
     return this.handlers.ping()
   }
 
+  /** 读插件包内资产（精确素体 GLB / morph bin / manifest）。name 走白名单防越界。 */
+  @Remote('readAsset')
+  readAsset(args: { name: string }, signal: AbortSignal): Promise<{ base64: string; mime: string }> {
+    signal.throwIfAborted()
+    return this.handlers.readAsset(args)
+  }
+
   /**
    * 跑一轮图片生成。⚠ 取消语义：signal 只在请求尚未发出前生效；mmx 已 spawn 后
    * 的等待不响应取消（接口非幂等，杀进程 = 白花钱且丢失产物），结果照常进历史。

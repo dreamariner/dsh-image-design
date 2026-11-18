@@ -261,12 +261,14 @@ describe('姿势库', () => {
     }
   })
 
-  it('a-pose 是绑定姿态（全零表）', () => {
+  it('a-pose 是绑定姿态：全关节零位', () => {
+    // 绑定姿态本身就是 A-pose（手臂外展 43°、前倾 23°），所以 a-pose 就是全零表。
+    // 「自然下垂」是 stand —— 它要同时补偿前倾（肩 x）与外展（肩 z）。
     const a = poseJoints('a-pose')
     for (const j of JOINT_NAMES) {
-      expect(a[j].x).toBe(0)
-      expect(a[j].y).toBe(0)
-      expect(a[j].z).toBe(0)
+      expect(a[j].x, `${j}.x`).toBe(0)
+      expect(a[j].y, `${j}.y`).toBe(0)
+      expect(a[j].z, `${j}.z`).toBe(0)
     }
   })
 

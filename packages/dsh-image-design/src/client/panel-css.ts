@@ -104,17 +104,38 @@ export const PANEL_CSS = `
 .idi-refrow { display: flex; gap: 6px; align-items: center; min-width: 0; }
 
 /* ── 素体视图 ──────────────────────────────────────────────────────────── */
+/* 布局：视口为主（flex:1 吃掉富余高度），参数区封顶 45% 内部滚动。
+   此前视口写死 min(300px, 42vh)，竖向窄栏里站立人体被压成扁宽盒（2026-11-18）。 */
 .idi-man-root { flex: 1; min-height: 0; display: flex; flex-direction: column;
   gap: 10px; padding: 10px 12px 16px; }
-.idi-man-viewport { flex: none; height: min(300px, 42vh); position: relative;
+.idi-man-viewport { flex: 1 1 0; min-height: 300px; position: relative;
   border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-md);
   overflow: hidden; background: var(--dsw-alias-bg-base); touch-action: none;
   cursor: grab; }
 .idi-man-viewport:active { cursor: grabbing; }
 .idi-man-viewport canvas { display: block; outline: none; }
-.idi-man-params { flex: 1; min-height: 0; overflow-y: auto; display: flex;
-  flex-direction: column; gap: 10px; }
+.idi-man-params { flex: none; height: 45%; min-height: 240px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 10px; }
+/* 视口悬浮层：容器不拦截轨道拖拽，子控件各自恢复交互 */
+.idi-man-overlay { position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  display: flex; flex-direction: column; justify-content: flex-end; }
+.idi-man-hint { position: absolute; top: 6px; right: 8px; font-size: 10px; line-height: 14px;
+  color: var(--dsw-alias-label-tertiary);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); }
+.idi-man-cambar { pointer-events: auto; display: flex; flex-wrap: wrap;
+  align-items: center; gap: 6px; margin: 0 8px 8px; padding: 6px 8px;
+  border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-md);
+  background: color-mix(in srgb, var(--dsw-alias-bg-base) 85%, transparent);
+  backdrop-filter: blur(6px); }
+/* 姿势下拉限宽：最长选项（A-pose（绑定姿态基准））会把相机条撑到折行 */
+.idi-man-cambar select { max-width: 176px; text-overflow: ellipsis; }
+/* 拍摄钮独立悬浮（快门钮形态）：窄栏放不进相机条，且独立后相机条稳定单行 */
+.idi-man-shutter { position: absolute; right: 12px; bottom: 62px; z-index: 1;
+  pointer-events: auto; }
 .idi-slider-row { display: flex; align-items: center; gap: 6px; }
+/* 滑杆防轨道跳值不在 CSS 做：pointer-events:none 在 Chromium 里连 thumb 伪元素
+   一起禁死（::-webkit-slider-thumb 的 pointer-events:auto 不生效），实机验证
+   拖 thumb 也失效。JS 方案在 MannequinView 的 mousedown 命中测试。 */
 .idi-slider-label { flex: none; width: 58px; font-size: 11px; line-height: 16px;
   color: var(--dsw-alias-label-secondary); }
 .idi-slider-val { flex: none; min-width: 48px; text-align: right; font-size: 11px;
@@ -128,6 +149,25 @@ export const PANEL_CSS = `
   background: var(--dsw-alias-bg-layer-1); }
 .idi-ref-meta { flex: 1; min-width: 0; display: flex; flex-direction: column;
   gap: 2px; overflow: hidden; }
+/* 折叠分组（测量/雕刻/脸/手），原生 details 承载 */
+.idi-fold { border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-base); overflow: hidden; }
+.idi-fold > summary { display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+  font-size: 11px; line-height: 16px; color: var(--dsw-alias-label-secondary);
+  cursor: pointer; user-select: none; list-style: none; }
+.idi-fold > summary::-webkit-details-marker { display: none; }
+.idi-fold > summary::before { content: '›'; display: inline-block; width: 10px;
+  font-size: 14px; line-height: 10px; color: var(--dsw-alias-label-tertiary);
+  transition: transform 0.15s ease; }
+.idi-fold[open] > summary::before { transform: rotate(90deg); }
+.idi-fold[open] > summary { border-bottom: 0.5px solid var(--dsw-alias-border-l3); }
+.idi-fold > .idi-slider-row { padding: 4px 8px; }
+.idi-fold > .idi-slider-row:last-child { padding-bottom: 8px; }
+/* 资产加载遮罩 */
+.idi-man-loading { position: absolute; inset: 0; z-index: 2; display: flex;
+  flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-base); }
 `
 
 const CELL_STYLES = [

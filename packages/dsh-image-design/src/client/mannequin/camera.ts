@@ -3,8 +3,6 @@
 // 纯函数给位姿（可单测）；组件把位姿套到 THREE.PerspectiveCamera 上，
 // 拖拽 / 滚轮改 orbit 状态后重算（预设只是 orbit 状态的初始值，拍完钉进 ref.json）。
 
-import type { BodyParams } from './body.ts'
-
 export type ShotKind = 'full' | 'threeQuarter' | 'half' | 'closeup'
 export type AzimuthKind = 'front' | 'quarter' | 'side' | 'back'
 export type ElevationKind = 'level' | 'high' | 'low'

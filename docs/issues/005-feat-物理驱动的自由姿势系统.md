@@ -2,7 +2,7 @@
 id: 005
 type: feat
 title: 物理驱动的自由姿势系统（目标 + 重力/接触 + IK 求解，支持自由摆动作）
-status: doing
+status: done
 priority: P1
 labels: []
 created: 2026-11-18
@@ -112,31 +112,40 @@ related: [003, 004]
 
 | 参数 | 值 | 说明 |
 |---|---|---|
-| `GRAVITY` | 9.81 m/s² | 模型空间（y 向下为负） |
-| 末端质量 | 手 0.5 kg / 脚 0.8 kg / 头 4.5 kg | 决定谁压得住谁 |
-| 弹簧刚度 `k` | 手 260 N/m / 脚 420 N/m | 连回作者意图的「肌肉」 |
+| `gravity` | 9.81 m/s² | 模型空间（y 向下为负） |
+| 末端质量 | 手 0.5 kg / 脚 0.8 kg | 决定谁压得住谁（头部不是粒子，由头目标驱动脊柱朝向） |
+| 弹簧刚度 `k` | 手 600 N/m / 脚 900 N/m | 连回作者意图的「肌肉」 |
 | 阻尼比 `ζ` | 1.0（临界阻尼） | 过阻尼：不振荡，落定快 |
-| 摩擦系数 `μ` | 0.6 | 手放腿上不打滑 |
+| 摩擦系数 `μ` | 0.25 | 接触时切向速度每子步衰减的比例（手放腿上不打滑） |
 | `dt` | 1/120 s | 固定 |
-| 子步上限 | 240（2 秒模拟时间） | 固定；落定提前退出 |
+| 单帧推进子步 | 8 | 每渲染帧推进的子步数（拖动时跟手） |
+| 子步上限 | 240（2 秒模拟时间） | `settle()` 的上限；落定提前退出 |
+| 落定阈值 | 0.01 m/s | 末速低于此即视为静止，之后零开销 |
+
+> 参数实际取值见 `src/client/mannequin/solver.ts` 的 `DEFAULT_SOLVER_CONFIG`（单源，
+> 上表是它的镜像；改参数只改那里）。
 
 ### 改动点
 
 | 模块 | 文件 | 改动 |
 |---|---|---|
-| client 素体 | `src/client/mannequin/solver.ts`（新增） | 物理 + 约束 + IK 求解器内核（纯函数、可单测、无 DOM 依赖） |
-| client 素体 | `src/client/mannequin/targets.ts`（新增） | 8 个预设的高层目标定义 + 目标↔世界系换算 |
-| client 素体 | `src/client/mannequin/poses.ts` | 保留现有关节表作回归基准（golden）；新增 `poseTargets(id)` |
-| client 素体 | `src/client/mannequin/viewer.ts` | `setTargets` / `getTargets`；物理推进与落定；视口拾取与拖肢体；模式切换 |
+| client 素体 | `src/client/mannequin/solver.ts`（新增） | 物理 + 约束 + IK 求解器内核（纯函数、可单测、无 DOM 依赖）；含语义锚点、肘朝向候选打分、`clearTargets` |
+| client 素体 | `src/client/mannequin/targets.ts`（新增） | 8 个预设的高层意图目标 + `computeBodyMetrics`（按体型换算） |
+| client 素体 | `src/client/mannequin/host.ts`（新增） | 运行时与测试**共用**的几何装配（`createSolverHost`：探针选取 / 体段代理 / 手部尺寸） |
+| client 素体 | `src/client/mannequin/poses.ts` | 保留现有关节表作回归基准（golden）；预设入口改走 `poseTargets(id)` |
+| client 素体 | `src/client/mannequin/viewer.ts` | `setTargets` / `getTargets` / `currentJoints` / `restorePose`；物理推进与落定；视口拾取与拖肢体；模式切换 |
 | client 素体 | `src/client/mannequin/ik.ts` | 复用；补「限位夹取」的可达域上限 |
-| client 素体 | `src/client/mannequin/contact.ts` | 复用；补「按体段局部网格」的轻量构建（运行时每帧重建用） |
+| client 素体 | `src/client/mannequin/contact.ts` | 复用；补骨局部朝向的截面帧与分位半径剖面 |
+| client 素体 | `src/client/mannequin/archive.ts`（新增） | 意图 ↔ 归档 wire 形状的转换（`toRefTargets` / `fromRefTargets`） |
 | client 面板 | `src/client/state.ts` | store 增 `man.targets` / `man.mode` / `man.selectedEnd` |
-| client 面板 | `src/client/MannequinView.tsx` | 姿势下拉改走目标；末端选择 + 三个目标滑杆 + 语义动作按钮；转视角/摆姿势开关 |
-| 契约 | `src/contract.ts` | `RefShotRecord` 增可选 `targets` |
+| client 面板 | `src/client/MannequinView.tsx` | 姿势下拉改走目标；末端选择 + 三个目标滑杆；转视角/摆姿势开关；参考图「回放姿势」 |
+| 契约 | `src/contract.ts` | `RefShotRecord` / `RefShotInput` 增可选 `targets`（`RefPoseTargets`） |
 | 宿主 | `src/mannequin-handlers.ts` | `ref.json` 落 `targets` |
-| scripts | `scripts/preview-mannequin.mjs` | 改走求解器出图（离线与运行时同源） |
-| scripts | `scripts/solve-arm-contact.ts` | 保留（离线精调专用）；运行时不再依赖它 |
-| tests | `tests/solver.spec.ts`（新增） | 求解器单测：目标命中、碰撞推离、摩擦停住、限位夹回、地面接触、重力落定、确定性 |
+| scripts | `scripts/solve-presets.ts`（新增） | 预设求解体检（落定 / 末端坐标 / 肘膝角 / 穿深 / 手-腿间隙 / 脚离地），`--json` 喂预览脚本 |
+| scripts | `scripts/preview-mannequin.mjs` | 改走求解器出图（离线与运行时同源），支持 `_root` 骨盆位移 |
+| tests | `tests/solver.spec.ts`（新增） | 求解器单测：目标命中、碰撞推离、限位夹回、地面接触、重力落定、语义锚点、确定性 |
+| tests | `tests/targets.spec.ts`（新增） | 预设门禁：8 个预设解出即断言几何性质（穿深 / 间隙 / 落地 / 夹角 / 同解一致 / 随体型换算） |
+| tests | `tests/archive.spec.ts`（新增） | 意图 ↔ 归档 wire 形状往返（不丢锚点 / 法向 / 肘朝向 / 踝角） |
 | tests | `tests/pose-geometry.spec.ts` | 反穿模门禁改为断言**求解器输出**的性质 + 新旧解关键量回归 |
 
 ### 影响面
@@ -154,17 +163,26 @@ related: [003, 004]
 
 ## 验收标准
 
-- [ ] `pnpm test` / `pnpm typecheck` / `pnpm build` 全绿；新增 `tests/solver.spec.ts` 覆盖
+- [x] `pnpm test` / `pnpm typecheck` / `pnpm build` 全绿；新增 `tests/solver.spec.ts` 覆盖
       IK 命中、碰撞推离、摩擦停住、限位夹回、地面接触、重力落定、同输入同解（确定性）
-- [ ] 8 个预设改由目标 + 求解生成；离线渲染（`preview-mannequin.mjs`）的正视/侧视/近景
-      与 004 的实机截图逐个核对，无回退
-- [ ] 实机（DSH 实例 + 内置浏览器）：坐姿/跪坐的手仍在大腿面上（间隙 −2~25mm），穿深 ≤8mm
-- [ ] 实机拖肢体实测：拖手进大腿被顶回贴面；拖到够不着处肘保持自然弯曲（不过伸）；
-      拖脚离地自动落回地面；拖快有惯性滞后（松手后落定）
-- [ ] 面板：末端选择 + 三个目标滑杆 + 语义动作按钮可用；「转视角 / 摆姿势」切换后
-      原有相机拖拽行为不受影响
-- [ ] 相同目标两次求解结果逐位一致（参考图归档可复现）
-- [ ] `AGENTS.md` 增补三层架构与物理参数纪律；`docs/wiki/00-变更日志.md` 记架构变更
+      —— 2026-11-18：192 passed / typecheck / build 全绿
+- [x] 8 个预设改由目标 + 求解生成；离线渲染（`preview-mannequin.mjs`）的正视/侧视/近景
+      与 004 的实机截图逐个核对，无回退 —— 2026-11-18：预览脚本改为**直接调求解器**
+      （离线与运行时同源，不再渲染静态姿势表），8 姿势 ×（正/侧）网格逐个核对；
+      顺带修掉预览脚本的壳漏传骨盆位移（坐/跪时壳停在绑定高度 → 「壳在上、身子在下」）
+- [x] 实机（DSH 实例 + 内置浏览器）：坐姿/跪坐的手仍在大腿面上（间隙 −2~25mm），穿深 ≤8mm
+      —— 2026-11-18：`tests/targets.spec.ts` 门禁 + 实机坐姿截图（手搭大腿、腿面贴住）
+- [x] 实机拖肢体实测：拖手进身体被顶回体外；拖到够不着处肘保持自然弯曲（不过伸）；
+      目标拖到地面以下被地面顶回（脚不穿地）；拖快有惯性滞后（松手后落定）
+      —— 2026-11-18：实机逐项验过（拖手过中线后腕仍在躯干外 0.24m；脚目标 −20cm 时
+      脚仍在地面 y=0.078）
+- [x] 面板：末端选择 + 三个目标滑杆 + 语义动作按钮（手贴大腿 / 双脚踩地 / 手垂体侧）可用；
+      「转视角 / 摆姿势」切换后原有相机拖拽行为不受影响
+      —— 2026-11-18：语义动作按「只改这一条意图」实现（其余意图保留），实机逐个点过
+- [x] 相同目标两次求解结果逐位一致（参考图归档可复现）
+- [x] `AGENTS.md` 增补三层架构与物理参数纪律；`docs/wiki/00-变更日志.md` 记架构变更
+- [x] 归档：`ref.json` 落意图目标 + 参考图列表可「回放姿势」（有意图按当前体型重解，
+      旧档钉关节表逐字节复现）—— 2026-11-18 实机拍档回放各验一次
 
 ## 依赖
 
@@ -182,3 +200,11 @@ related: [003, 004]
 - 2026-11-18 18:40  jianan  用户提出架构要求（不逐个手拧 / 要物理规则 / 要自由调整 / 要重力系统）；
       复盘 004 判定「手拧角度 + 不可信判据」是死路，方案定稿（三层架构 + 内置 PBD 物理），
       本 issue 建档
+- 2026-11-18 20:10  jianan  求解器内核 + 语义锚点 + 8 预设意图目标 + 共享几何宿主落地；
+      8 个预设全部解出并落定，门禁（穿深 ≤8mm / 手-腿间隙 −2~25mm / 脚落地 / 肘膝 ≤182° /
+      同解逐位一致）全绿
+- 2026-11-18 20:45  jianan  接进运行时（物理推进 + 落定 + 视口抓肢体拖 + 面板末端目标控件）；
+      实机验过：切坐姿、拖左手、拖滑杆、标签翻「手动调整」都对
+- 2026-11-18 21:05  jianan  归档升级（ref.json 落意图 + 「回放姿势」）与语义动作按钮补齐；
+      离线预览改为直接调求解器（与运行时同源），修掉壳漏传骨盆位移的渲染 bug；
+      8 姿势网格逐个核对无回退；全量测试 192 passed

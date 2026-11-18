@@ -11,6 +11,8 @@ export type { GenerateWireArgs } from './contract.ts'
 export interface ImageDesignDeps extends GenerationDeps {
   /** 默认模型（wire 未显式传 model 时用）。 */
   defaultModel: ImageModel
+  /** 从插件包 assets/ 读一个资产文件（白名单防越界；精确素体 GLB/morph 走此通道）。 */
+  readAsset: (name: string) => Promise<{ base64: string; mime: string }>
 }
 
 export interface ImageDesignHandlers {
@@ -20,6 +22,8 @@ export interface ImageDesignHandlers {
   readImage(args: { id: string; file: string }): Promise<{ base64: string; mime: string }>
   deleteRun(args: { id: string }): Promise<{ ok: true }>
   ping(): Promise<{ pong: true; outDir: string; defaultModel: ImageModel }>
+  /** 从插件包 assets/ 读资产（精确素体 GLB/morph）。白名单在 deps.readAsset 内。 */
+  readAsset(args: { name: string }): Promise<{ base64: string; mime: string }>
 }
 
 export function createImageDesignHandlers(deps: ImageDesignDeps): ImageDesignHandlers {
@@ -34,5 +38,6 @@ export function createImageDesignHandlers(deps: ImageDesignDeps): ImageDesignHan
     readImage: (args) => readRunImage(deps.resolveOutDir(), args.id, args.file),
     deleteRun: (args) => deleteRun(deps.resolveOutDir(), args.id),
     ping: () => Promise.resolve({ pong: true as const, outDir: deps.resolveOutDir(), defaultModel: deps.defaultModel }),
+    readAsset: (args) => deps.readAsset(args.name),
   }
 }

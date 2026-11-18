@@ -9,10 +9,15 @@
 // 姿势合成：父先于子，骨的局部四元数 = 姿势欧拉；子骨随父骨的新朝向一起动
 // （局部旋转天然级联），因此弯肘时前臂跟着走。
 //
-// 旋转约定（世界轴，XYZ 顺序）：
-//   · x：绕世界 X 轴。躯干 x > 0 = 前倾；四肢 x > 0 = 向后摆、x < 0 = 向前抬。
-//   · y：绕世界 Y 轴 = 水平扭转（转体）。
-//   · z：绕世界 Z 轴 = 侧向展开（角色左 = +x，左侧 +z 为向外抬起）。
+// 旋转约定（世界轴欧拉，XYZ 顺序；正负号已用 GLB 骨架 FK 逐项标定）：
+//   · 髋 x > 0 = 大腿后伸，x < 0 = 前屈
+//   · 膝 x > 0 = 小腿向后折（生理唯一方向），x < 0 = 反关节
+//   · 踝 x > 0 = 跖屈（脚尖下压），x < 0 = 背屈（脚尖上抬）——与 poses.ts 标定一致
+//     （2026-11-17 审计修正：此处曾写反；跪坐 ankle=+0.9 脚背放平证明 x>0 是跖屈）
+//   · 肩 x > 0 = 手臂后摆，x < 0 = 前摆；z > 0 = 外展抬起（左臂）
+//   · 肘 x < 0 = 屈肘（前臂向前），x > 0 = 过伸
+//   · 脊柱 x > 0 = 前倾
+//   详细说明与姿势表见 poses.ts 顶部。
 
 import * as THREE from 'three'
 import { BONE, JOINT_NAMES, type JointName } from './body.ts'
@@ -60,8 +65,7 @@ export const APPLY_ORDER: readonly JointName[] = [
 ]
 
 /** 姿势应用所需的一次性骨架上下文。 */
-export interface RigBinding {
-  bones: Map<JointName, THREE.Object3D>
+export interface RigBinding {  bones: Map<JointName, THREE.Object3D>
   /** 绑定姿态下各骨的**世界位置**（形变枢轴）。 */
   restWorld: Map<JointName, THREE.Vector3>
   /** 绑定姿态下各骨的**局部位置**（骨链长度调整的基准）。 */
@@ -139,4 +143,45 @@ export function applyRigPose(binding: RigBinding, table: JointRotations): void {
     bone.updateMatrix()
     bone.updateWorldMatrix(true, false)
   }
+}
+
+/** 蒙皮采样所需的数据（与 three 的 SkinnedMesh 属性一一对应）。 */
+export interface SkinSample {
+  position: THREE.BufferAttribute
+  skinIndex: THREE.BufferAttribute
+  skinWeight: THREE.BufferAttribute
+  bones: THREE.Object3D[]
+  boneInverses: THREE.Matrix4[]
+}
+
+/**
+ * 蒙皮后的世界最低点（m）——素体「落地」的唯一判据。
+ *
+ * 为什么不能沿用「绑定姿态脚趾骨 y − 脚掌厚度」：那只对 A-pose 成立。姿势一变
+ * （跑/坐/跪），贴地的部位整体改变，固定偏移会让整个人浮空——实测修复前
+ * run 悬空 17.1cm、walk 6.7cm、sit 36.2cm、kneel 27.3cm。
+ *
+ * `probe` 只传低位顶点（脚、小腿下段、垂下的手）就够：任何姿势真正贴地的部位
+ * 都来自这批顶点，遍历量从 1.9 万降到 3 千，换姿势时 <5ms。
+ */
+export function lowestSkinnedY(sample: SkinSample, probe: readonly number[]): number {
+  const { position, skinIndex, skinWeight, bones, boneInverses } = sample
+  const m = new THREE.Matrix4()
+  const v = new THREE.Vector3()
+  let minY = Infinity
+  for (const i of probe) {
+    let y = 0
+    for (let k = 0; k < 4; k++) {
+      const w = skinWeight.getComponent(i, k)
+      if (w === 0) continue
+      const b = skinIndex.getComponent(i, k)
+      const bone = bones[b]
+      if (bone === undefined) continue
+      m.multiplyMatrices(bone.matrixWorld, boneInverses[b])
+      v.fromBufferAttribute(position, i).applyMatrix4(m)
+      y += w * v.y
+    }
+    if (y < minY) minY = y
+  }
+  return minY === Infinity ? 0 : minY
 }

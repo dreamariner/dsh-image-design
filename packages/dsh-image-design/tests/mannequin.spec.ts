@@ -120,4 +120,25 @@ describe('参考图存档', () => {
     mkdirSync(join(outDir, 'refs', 'broken-dir'), { recursive: true }) // 没有 ref.json：忽略
     expect((await listRefs(outDir)).length).toBe(1)
   })
+
+  it('意图目标落进 ref.json（回放时按当前体型重解）', async () => {
+    const targets = {
+      root: { x: 0, y: 0.48, z: 0 },
+      effectors: {
+        handL: { anchor: { part: 'leftThigh', t: 0.48, radialDeg: 5, gapM: 0.002 } },
+        footR: { pos: { x: 0.1, y: 0.07, z: 0.3 } },
+      },
+    }
+    const r = await saveRefShot(deps(), shot({ targets }))
+    const manifest = JSON.parse(readFileSync(join(outDir, 'refs', r.refId, 'ref.json'), 'utf-8'))
+    expect(manifest.targets.root.y).toBe(0.48)
+    expect(manifest.targets.effectors.handL.anchor.part).toBe('leftThigh')
+    expect(manifest.targets.effectors.footR.pos.z).toBe(0.3)
+  })
+
+  it('旧档没有意图目标也能读（字段可选）', async () => {
+    const r = await saveRefShot(deps(), shot())
+    const manifest = JSON.parse(readFileSync(join(outDir, 'refs', r.refId, 'ref.json'), 'utf-8'))
+    expect(manifest.targets).toBeUndefined()
+  })
 })

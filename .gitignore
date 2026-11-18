@@ -14,6 +14,11 @@ packages/*/lib/
 .vite/
 *.tsbuildinfo
 
+# 精确素体 morph 源 target（143 个 MakeHuman CC0 .target，4.9MB 中间产物）
+# 由 scripts/fetch-makehuman-morphs.mjs 钉 commit 拉取，可随时重建，不入库；
+# 真正随包发布的是编译后的 mannequin-morphs.bin/json（见 package.json files）。
+packages/dsh-image-design/assets/morphs-src/
+
 # 发布时由 prepublishOnly 从仓根同步进包目录（真源在仓根，防双真源漂移）
 packages/*/README.md
 packages/*/LICENSE

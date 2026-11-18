@@ -34,6 +34,8 @@ export interface ImageDesignApi {
   readRefImage(refId: string, file: string): Promise<{ bytes: Uint8Array; mime: string }>
   readRefRecord(refId: string): Promise<RefView>
   deleteRef(refId: string): Promise<void>
+  // ── 精确素体资产（readAsset 白名单）────────────────────────────────────
+  readAsset(name: string): Promise<{ bytes: Uint8Array; mime: string }>
 }
 
 /** Remote 信封：ok 取 value，!ok 抛错。 */
@@ -71,6 +73,10 @@ export function createImageDesignApi(ns: unknown): ImageDesignApi {
     readRefRecord: (refId) => unwrap(m.readRefRecord({ refId })),
     deleteRef: async (refId) => {
       await unwrap(m.deleteRef({ refId }))
+    },
+    readAsset: async (name) => {
+      const v = await unwrap<{ base64: string; mime: string }>(m.readAsset({ name }))
+      return { bytes: base64ToBytes(v.base64), mime: v.mime }
     },
   }
 }

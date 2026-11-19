@@ -2,7 +2,7 @@
 type: agent-context
 scope: dsh-image-design/docs/issues
 version: 1.0
-last-updated: 2026-11-15
+last-updated: 2026-11-20
 ---
 
 # AGENTS.md · dsh-image-design/docs/issues
@@ -89,6 +89,7 @@ last-updated: 2026-11-15
 | # | type | 标题 | status | priority |
 |---|---|---|---|---|
 | 004 | feat | 精确人体素体模型（cm 级测量 + 局部雕刻 + 身体/脸/手全覆盖） | doing | P1 |
+| 007 | feat | 顶栏 Tab 改侧栏导航（面板布局重构） | doing | P2 |
 
 ## 已完成 Issue
 

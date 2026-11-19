@@ -195,6 +195,30 @@ export const DEFAULT_SOLVER_CONFIG: SolverConfig = {
  */
 /** 换肘朝向要领先多少（米）才换：防抖用。 */
 const POLE_SWITCH_MARGIN = 0.03
+/** 锚定手的「前臂同向」打分差多少才换肘（无量纲，防抖用）。 */
+const POLE_ALIGN_MARGIN = 0.02
+
+/**
+ * 体段表面在某截面角处的**切向**（沿轴向）：手搭在上面时顺着它走。
+ *
+ * 取法：同一截面角上取 t±ε 两个表面点，差向即切向 ✓。肢体是锥形（大腿近膝更细），
+ * 顶面沿长度下沉，切向自带坡度 → 手掌能平贴在面上、掌根不抬、指尖不扎 ✓。
+ * 退化（代理没有表面点）时回退到段轴 ✓。
+ */
+function surfaceTangent(seg: EllipsoidSegment, t: number, dir: THREE.Vector3): THREE.Vector3 {
+  const axis = seg.b.clone().sub(seg.a)
+  const fallback = axis.lengthSq() > 1e-12 ? axis.normalize() : new THREE.Vector3(0, 0, 1)
+  const eps = 0.02
+  const p0 = seg.surfaceAlong(Math.max(0, t - eps), dir)
+  const p1 = seg.surfaceAlong(Math.min(1, t + eps), dir)
+  if (p0 === null || p1 === null) return fallback
+  const tan = p1.point.clone().sub(p0.point)
+  if (tan.lengthSq() < 1e-10) return fallback
+  tan.normalize()
+  // 方向朝段的远端（指尖朝膝 / 朝下）✓
+  if (tan.dot(fallback) < 0) tan.negate()
+  return tan
+}
 
 // pole 候选 ≈ **绑定姿态的上臂方向**（外下，z 分量小）：肘该在肩下是解剖事实
 //（2026-11-19 实测 run 双肘 dy≈0、上臂水平外展 90°），但纯世界向下的 pole 会把
@@ -226,14 +250,25 @@ export const JOINT_LIMITS = {
   anklePlantarMaxDeg: 60,
   /** 踝背屈上限（度）。 */
   ankleDorsiflexMaxDeg: 45,
-  /**
-   * 腕屈曲上限（度）：手轴与前臂轴的夹角。
-   *
-   * 人腕能屈到 ~70°，但**静息/自然持握**在 10°~30°（2026-11-18 实机判据）。
-   * 超过 40° 手就摊成一把耙子（张开的四指 × 大腕屈 = 耙子状），
-   * 实测坐姿曾到 66° → 手看着像折断。求解器把腕屈夹回本上限 ✓。
-   */
-  wristFlexMaxDeg: 40,
+}
+
+/**
+ * 腕的解剖区间：**掌屈/背伸**与**尺桡偏折**是两个独立自由度，要分开限。
+ *
+ * 人腕：掌屈 ~80°、背伸 ~70°、尺桡偏 ~30°。
+ *
+ * ⚠ 之前夹的是「前臂轴 ↔ 手轴」的**总夹角**（40°）：手掌平贴在面上时，
+ * 前臂与手之间本来就有几十度的横向偏折，总夹角把偏折算成了腕屈 → 背伸被夹 →
+ * 掌翘起来、指尖扎进腿面（实测 sit 指尖入腿 50mm、kneel 入腿 13mm）。
+ * 分开夹之后：坐姿要的是背伸 33° + 偏折 21°，都在解剖范围内 ✓。
+ */
+export const WRIST_LIMITS = {
+  /** 掌屈上限（度）：手向掌侧折（超过就摊成一把耙子，实机像折断）。 */
+  flexionMaxDeg: 40,
+  /** 背伸上限（度）：手向背侧折（手掌平贴在面上时需要的正是这个角度）。 */
+  extensionMaxDeg: 70,
+  /** 尺/桡偏折上限（度）：手在额状面内偏向小指侧/拇指侧。 */
+  deviationMaxDeg: 40,
 }
 
 interface Particle {
@@ -498,9 +533,14 @@ export class PoseSolver {
       if (hit === null) return null
       // 锚点描述的是**接触点**（手掌触点 / 脚掌触点）
       const contact = hit.point.clone().addScaledVector(dir, t.anchor.gapM)
+      // 指尖方向：没给就顺着**体段的表面切向**（不是段轴）。
+      //
+      // 为什么不能直接用段轴：肢体是锥形的（大腿近膝更细），顶面沿长度下沉；
+      // 手掌平贴在上面时，指尖要跟着坡度走，掌根（腕后那截）才不会被抬离面、
+      // 指尖才不扎进面（实测：按段轴放 → 掌根入面 9mm、掌心离面 10mm ✗）。
       const forward = t.forward !== undefined
         ? new THREE.Vector3(t.forward.x, t.forward.y, t.forward.z).normalize()
-        : axis.clone()
+        : surfaceTangent(seg, t.anchor.t, dir)
       const normal = t.normal !== undefined
         ? new THREE.Vector3(t.normal.x, t.normal.y, t.normal.z).normalize()
         : dir.clone().negate()
@@ -631,6 +671,7 @@ export class PoseSolver {
     chain: { shoulderPos: THREE.Vector3; parentQuat: THREE.Quaternion; upperOffset: THREE.Vector3; foreOffset: THREE.Vector3 },
     target: THREE.Vector3,
     hint: 'back' | 'out' | 'up',
+    align: THREE.Vector3 | null = null,
   ): THREE.Vector3 {
     const lateral = side === 'Left' ? 1 : -1
     const segments = this.host.segments()
@@ -647,6 +688,45 @@ export class PoseSolver {
         }
       }
       return clearance
+    }
+    // 锚定手：按「前臂与手掌同向」选肘位（腕伸直 = 手掌平贴面时的真人物理 ✓）
+    //
+    // 为什么需要这条规则：手掌平贴在面上时，真人的前臂与手是连成一条线的
+    // （坐姿搭腿：前臂顺着腿面，腕不折）。只按「链离身体最空」挑肘 → 前臂朝下垂
+    // → 要把掌放平得背伸 60°+ → 腕被夹限 → 掌翘起来、指尖扎进腿面
+    // （实测 sit 指尖入腿 50mm、kneel 入腿 13mm）✓
+    if (align !== null) {
+      const alignOf = (pole: THREE.Vector3): number => {
+        const ik = solveTwoBone(chain, target, pole)
+        const fore = target.clone().sub(ik.elbowPos)
+        if (fore.lengthSq() < 1e-12) return -Infinity
+        return fore.normalize().dot(align)
+      }
+      // 候选分两档：离身体有安全余量的（代理 15mm）优先（代理比网格胖，
+      // 余量不够时网格会陷进去（实测前臂入胸 11.8mm）✓
+      const cands = POLE_CANDIDATES.map((cand) => {
+        const pole = new THREE.Vector3(cand.dir[0] * lateral, cand.dir[1], cand.dir[2]).normalize()
+        return { pole, clear: scoreOf(pole), key: cand.key }
+      }).filter((c) => c.clear >= 0)
+      const safe = cands.filter((c) => c.clear >= 0.015)
+      const pool = safe.length > 0 ? safe : cands
+      if (pool.length > 0) {
+        let best = pool[0]
+        let bestScore = alignOf(pool[0].pole) + (pool[0].key === hint ? 0.05 : 0)
+        for (const c of pool) {
+          const s = alignOf(c.pole) + (c.key === hint ? 0.05 : 0)
+          if (s > bestScore) {
+            bestScore = s
+            best = c
+          }
+        }
+        // 迟滞：同分不换（否则两个候选来回翻 → 肘抖 → 目标抖）✓
+        if (best.pole === current || bestScore > alignOf(current) + POLE_ALIGN_MARGIN) {
+          this.poleChoice[side] = best.pole
+          return best.pole
+        }
+        return current
+      }
     }
     // 解剖意图优先（2026-11-19 实机修复）：hint 的 pole 无身体冲突就直接用。
     // 纯按「链离身体最远」打分会把松垂摆臂的肘理性地举到肩高（上臂水平外展
@@ -1284,7 +1364,10 @@ export class PoseSolver {
       // 粒子的惯性表现（拖动滞后）由物理层保留，关节走稳定的目标 ✓。
       let target = clampToReach(shoulderPos, p.goal, upperOffset.length(), foreOffset.length(), JOINT_LIMITS.elbowFlexMaxDeg)
       // 肘的朝向：候选里挑一个离躯干/腿最空的（提示只作偏好，不作命令 ✓）
-      let pole = this.chooseArmPole(side, chain, target, p.poleHint)
+      // ⚠ 锚定到体段的手另有一条物理规则：**前臂与手掌同向**（腕伸直）✓
+      const anchored = this.targets.effectors[side === 'Left' ? 'handL' : 'handR']?.anchor !== undefined
+      const align = anchored ? p.forward : null
+      let pole = this.chooseArmPole(side, chain, target, p.poleHint, align)
       let ik: TwoBoneSolution = solveTwoBone(chain, target, pole)
       // 手臂要穿过身体时把目标收回来 / 拐到同侧：真实的手臂会「撞到胸口就滑不动」✓
       // （不处理的话 IK 只能让上臂从躯干里穿过去 —— 实测插进胸口 112mm）。
@@ -1364,7 +1447,7 @@ export class PoseSolver {
       const foreDir = tmpA.subVectors(target, ik.elbowPos).normalize()
       const forward = p.forward !== null ? p.forward.clone() : foreDir.clone()
       const normal = p.normal !== null ? p.normal.clone() : this.inwardPalmDir(shoulderPos, side)
-      const flexClamped = clampWristFlexion(forward, foreDir, JOINT_LIMITS.wristFlexMaxDeg)
+      const flexClamped = clampWristPose(forward, foreDir, normal)
       // 指尖别戳进身体：前臂指向身体时（跨中线够东西 / 手按在体表），指尖沿前臂
       // 方向延伸会插进躯干/腿 —— 实测手插进胸口 62~117mm（2026-11-18）。
       // 修法：把指尖点查一遍碰撞，戳进去就把 forward 沿「朝外」方向旋出（腕背伸，
@@ -1373,7 +1456,7 @@ export class PoseSolver {
       const fingersOut = this.keepFingersOut(target, flexClamped, normal, side === 'Left' ? 'handL' : 'handR')
       // keepFingersOut 的旋出再夹一次腕屈（2026-11-19 实测 run 右腕 44° > 上限：
       // 旋出方向未必顺着眼前的屈曲面，叠加后能越过 40° 上限 → 视觉上又是耙子）
-      const fingersClamped = clampWristFlexion(fingersOut, foreDir, JOINT_LIMITS.wristFlexMaxDeg)
+      const fingersClamped = clampWristPose(fingersOut, foreDir, normal)
       const desired = makeHandFrame(fingersClamped, normal)
       const elbowWorld = parentQuat.clone().multiply(ik.shoulderLocal).multiply(ik.elbowLocal)
       joints[wJoint] = localQuatToPoseEuler(solveHandOrientation(this.restFrames[side], desired, elbowWorld), zSign)
@@ -1455,26 +1538,56 @@ export interface JointRotationsResult {
 }
 
 /**
- * 腕屈夹回解剖区间：手轴与前臂轴的夹角不超过上限。
+ * 腕姿态夹回解剖区间：**屈伸**与**偏折**分开夹。
  *
- * 为什么必须夹（2026-11-18 实机事故）：坐姿的腕屈一度到 66° —— 手摊成一把耙子
- * （人看着像折断）。人腕能屈到 ~70°，但自然持握在 10°~30°。
+ * 分解方式：把「手轴」在「前臂轴 + 掌心法向」张成的平面里拆成屈伸角
+ * （掌屈为正、背伸为负）与偏折角（出平面的分量），各自夹回解剖上限，再重组 ✓。
  *
- * 夹的方式：把手轴在「前臂方向 ↔ 目标手轴」构成的平面内**转回前臂方向**，
- * 保留「指尖大致该朝哪」的意图（不是把手掰到另一个姿态）✓。
+ * @param forward 手轴方向（期望）
+ * @param foreDir 前臂轴方向（肘→腕）
+ * @param palmNormal 掌心法向（定屈伸平面；缺省则退化成夹总夹角）
  */
-export function clampWristFlexion(
+export function clampWristPose(
   forward: THREE.Vector3,
   foreDir: THREE.Vector3,
-  maxDeg: number,
+  palmNormal: THREE.Vector3 | null,
 ): THREE.Vector3 {
-  const cosA = THREE.MathUtils.clamp(forward.dot(foreDir), -1, 1)
-  const ang = Math.acos(cosA)
-  const maxRad = (maxDeg * Math.PI) / 180
-  if (ang <= maxRad) return forward.clone()
-  const axis = new THREE.Vector3().crossVectors(foreDir, forward)
-  if (axis.lengthSq() < 1e-10) return forward.clone()
-  axis.normalize()
-  // 绕 (foreDir × forward) 转 -(ang - max)：手轴朝前臂方向收 ✓
-  return forward.clone().applyAxisAngle(axis, -(ang - maxRad))
+  const f = forward.clone().normalize()
+  const fd = foreDir.clone().normalize()
+  if (palmNormal === null) {
+    // 退化口径（没有掌法向）：夹总夹角
+    const ang = Math.acos(THREE.MathUtils.clamp(f.dot(fd), -1, 1))
+    const maxRad = (WRIST_LIMITS.flexionMaxDeg * Math.PI) / 180
+    if (ang <= maxRad) return f
+    const axis = new THREE.Vector3().crossVectors(fd, f)
+    if (axis.lengthSq() < 1e-10) return f
+    axis.normalize()
+    return f.applyAxisAngle(axis, -(ang - maxRad))
+  }
+  // 屈伸方向 = 掌心法向在前臂轴的垂分量（掌屈 = 手轴转向掌心那一侧）
+  const flexDir = palmNormal.clone().addScaledVector(fd, -palmNormal.dot(fd))
+  if (flexDir.lengthSq() < 1e-10) return f
+  flexDir.normalize()
+  const planeN = new THREE.Vector3().crossVectors(fd, flexDir).normalize()
+  const a = f.dot(fd)
+  const b = f.dot(flexDir)
+  const c = f.dot(planeN)
+  const radial = Math.hypot(a, b)
+  // 屈伸角：>0 掌屈、<0 背伸（在屈伸平面内的仰角）；偏折角：出手平面的分量
+  const flex = THREE.MathUtils.clamp(
+    Math.atan2(b, a),
+    -(WRIST_LIMITS.extensionMaxDeg * Math.PI) / 180,
+    (WRIST_LIMITS.flexionMaxDeg * Math.PI) / 180,
+  )
+  const dev = THREE.MathUtils.clamp(
+    Math.atan2(c, radial),
+    -(WRIST_LIMITS.deviationMaxDeg * Math.PI) / 180,
+    (WRIST_LIMITS.deviationMaxDeg * Math.PI) / 180,
+  )
+  const cosFlex = Math.cos(flex)
+  return new THREE.Vector3()
+    .addScaledVector(fd, cosFlex * Math.cos(dev))
+    .addScaledVector(flexDir, Math.sin(flex) * Math.cos(dev))
+    .addScaledVector(planeN, Math.sin(dev))
+    .normalize()
 }

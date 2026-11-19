@@ -98,6 +98,43 @@ const ANCHOR_SEGMENTS: SegmentSpec[] = [
 /** 半径剖面的分段数（沿解剖 t）。 */
 const PROFILE_BANDS = 8
 
+/**
+ * 最小二乘二次拟合 y = c0 + c1·x + c2·x²（正规方程 + 高斯消元）。
+ *
+ * 用来量「曲率」：二次项就是曲线的中线弯曲方向（手指的卷曲量就是这么量的）
+ * （指尖相对指根沿薄轴的偏移 = 二次项，二次项的符号 = 掌心朝哪一侧）✓。
+ * 矩阵奇异（样本太少/共线）时返回 null，调用方走兜底 ✓。
+ */
+function leastSquaresQuadratic(xs: number[], ys: number[]): number[] | null {
+  if (xs.length < 4) return null
+  const S = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
+  const T = [0, 0, 0]
+  for (let i = 0; i < xs.length; i++) {
+    const b = [1, xs[i], xs[i] * xs[i]]
+    for (let k = 0; k < 3; k++) {
+      T[k] += b[k] * ys[i]
+      for (let m = 0; m < 3; m++) S[k][m] += b[k] * b[m]
+    }
+  }
+  const M = S.map((row, i) => [...row, T[i]])
+  for (let i = 0; i < 3; i++) {
+    let p = i
+    for (let r = i + 1; r < 3; r++) if (Math.abs(M[r][i]) > Math.abs(M[p][i])) p = r
+    if (p !== i) {
+      const t = M[p]
+      M[p] = M[i]
+      M[i] = t
+    }
+    if (Math.abs(M[i][i]) < 1e-12) return null
+    for (let r = 0; r < 3; r++) {
+      if (r === i) continue
+      const k = M[r][i] / M[i][i]
+      for (let c = i; c < 4; c++) M[r][c] -= k * M[i][c]
+    }
+  }
+  return [M[0][3] / M[0][0], M[1][3] / M[1][1], M[2][3] / M[2][2]]
+}
+
 /** 末端所属侧。 */
 export function effectorSide(id: EndEffectorId): 'Left' | 'Right' {
   return id === 'handL' || id === 'footL' ? 'Left' : 'Right'
@@ -307,9 +344,10 @@ export function createSolverHost(geom: MannequinGeometry, binding: RigBinding): 
     return out
   }
 
-  // ── 锚点代理（整段 + 半径剖面）───────────────────────────────────────
+  // ── 锚点代理（整段 + 半径剖面 + 角向剖面）─────────────────────────────
   const anchorRadii = new Map<string, { radiusU: number; radiusV: number }>()
   const anchorProfiles = new Map<string, (t: number) => { radiusU: number; radiusV: number }>()
+  const anchorRadial = new Map<string, RadialProfile>()
   for (const spec of ANCHOR_SEGMENTS) {
     anchorRadii.set(spec.name, radiiOf(spec, 0, 1))
     // 剖面：按解剖 t 分段量「宽/深」两个半轴（用骨的局部朝向，方向明确 ✓），插值取用
@@ -328,6 +366,22 @@ export function createSolverHost(geom: MannequinGeometry, binding: RigBinding): 
         radiusV: a0.radiusV + (a1.radiusV - a0.radiusV) * f,
       }
     })
+    // 角向剖面：锚点解析出的接触点必须落在**真实网格面**上（2026-11-19）。
+    // 椭圆拟合把「手搭大腿中段偏上」的点算到离轴 9~11cm，真实网格面只有 6.3~8.5cm
+    // ，锚点一解析就偏外 19~40mm，手掌因此悬在大腿上方两三厘米。
+    // 碰撞段早有角向剖面，锚点段却漏了 → 同一个身体部位两套口径 ✓。
+    //
+    // ⚠ 收缩系数取 1.0（不保守）：碰撞段用 0.9 是为了「宁可漏判穿模也不误判」，
+    //   锚点段相反：接触点必须落在**真面上**，收缩 10% 会把接触点埋进网格里
+    //   （半径 63mm 收缩 6.3mm → 手掌连同掌脊一起陷进腿面，实测 sit 手陷 6.6mm）✓
+    const verts: number[] = []
+    for (const bn of spec.verts) for (const vi of vertsOfBone.get(bn) ?? []) verts.push(vi)
+    anchorRadial.set(spec.name, measureRadialProfile(
+      bindPositions, verts,
+      bindBoneAt(spec.aBone), bindBoneAt(spec.bBone),
+      0, 1, geom.boneQuat(spec.aBone),
+      PROFILE_BANDS, 16, 1.0,
+    ))
   }
   const anchorSegment = (name: string): EllipsoidSegment | undefined => {
     const spec = ANCHOR_SEGMENTS.find((s) => s.name === name)
@@ -335,12 +389,29 @@ export function createSolverHost(geom: MannequinGeometry, binding: RigBinding): 
     const r = anchorRadii.get(name)!
     return new EllipsoidSegment(
       name, geom.boneAt(spec.aBone), geom.boneAt(spec.bBone), r.radiusU, r.radiusV,
-      geom.boneQuat(spec.aBone), anchorProfiles.get(name),
+      geom.boneQuat(spec.aBone), anchorProfiles.get(name), anchorRadial.get(name),
     )
   }
 
   // ── 手部静息系与尺寸 ─────────────────────────────────────────────────
-  /** 手部静息系（掌心法向 + 手轴）。 */
+  /**
+   * 手部静息系（掌心法向 + 手轴）。
+   *
+   * **掌心法向怎么定**（2026-11-19 系统性修复）：
+   *
+   * 手掌是一块「宽 6.5cm × 厚 2.3cm」的板 → 掌面法向同时垂直于手轴与掌宽轴，
+   * 于是法向只能是横截面主轴分解的**薄轴** ±（两个候选，一正一负）✓。
+   * 正负号用解剖不变量定：**手指朝掌心侧卷**（手掌摊平时手指就是朝掌心那一侧弯的）
+   * （指束中线沿薄轴的坐标 v 对手轴位置 a 做二次拟合，二次项 < 0 即指尖比指根
+   * 更靠 −thin ⇒ 掌心朝 −thin ✓。二次项 = 卷曲量，与手指张开无关 ✓。
+   *
+   * 为什么不用旧做法（「法线朝身体中线那半边的顶点法线均值」）：
+   * HM08 的掌心是**碗形**（中凹，不是平板），顶点法线均值落在碗的轴上，
+   * 与真实掌面差 36°（实测）→ 求解器把歪 36° 的静息掌法线映射到意图掌向 →
+   * 每个姿势的掌心都偏 36°，手永远贴不平大腿。
+   * 这就是「同一个毛病反复出现、逐个动作调不好」的根因：意图层写的世界掌向，
+   * 与静息系里那把歪着的解剖尺子不一致：改一个姿势的角度只能补另一个姿势的坑。
+   */
   const restHandFrame = (side: 'Left' | 'Right'): HandFrame => {
     const wrist = bindBoneAt(`mixamorig${side}Hand`)
     const handVerts: number[] = []
@@ -357,35 +428,79 @@ export function createSolverHost(geom: MannequinGeometry, binding: RigBinding): 
     for (const vi of tipVerts) tips.add(posOf(vi))
     tips.multiplyScalar(1 / Math.max(1, tipVerts.length))
     const forward = tips.clone().sub(wrist).normalize()
-    // 掌心法向：取「法向指向身体中线」那半边的顶点法线均值。
-    // ⚠ 过滤轴必须是 medial 本身（2026-11-19 实机修）：旧实现用
-    // axisNormal = cross(forward, medial) 过滤 —— 这个轴垂直于手轴与朝内方向，
-    // 实际选中的是**手背一侧**（HM08 绑定实测选中顶点法线均值 (0.99,0.08,−0.08)
-    // 朝外）→ rest 帧的「掌法线」实为手背方向 → 求解器把「手背」映射到目标的
-    // 「掌心」→ 所有姿势掌心整体翻 180°（手背贴腿、手指自然弯看着像反折）。
-    const medial = new THREE.Vector3(-(Math.sign(wrist.x) || 1), 0, 0)
-    const sideAxis = new THREE.Vector3().crossVectors(forward, medial).normalize()
-    const axisNormal = new THREE.Vector3().crossVectors(forward, sideAxis).normalize()
-    const acc = new THREE.Vector3()
-    for (const vi of handVerts) {
-      const p = posOf(vi)
-      const along = p.clone().sub(wrist).dot(forward)
-      if (along < handLen * 0.3 || along > handLen * 0.75) continue
-      const off = p.clone().sub(wrist.clone().addScaledVector(forward, along))
-      if (off.length() > 0.035) continue
-      const nrm = new THREE.Vector3(
-        geom.bindNormals[vi * 3], geom.bindNormals[vi * 3 + 1], geom.bindNormals[vi * 3 + 2],
-      )
-      // 掌侧 = 法线带朝内分量（身体中线方向）
-      if (nrm.dot(medial) <= 0) continue
-      acc.add(nrm)
+
+    // 横截面主轴分解（⊥ 手轴的平面内 2×2 协方差）：宽轴 = 掌宽方向，薄轴 = 掌面法向候选
+    const rel = handVerts.map((vi) => posOf(vi).sub(wrist))
+    const alongOf = (r: THREE.Vector3) => r.dot(forward)
+    let b1 = new THREE.Vector3(1, 0, 0)
+    if (Math.abs(b1.dot(forward)) > 0.9) b1.set(0, 1, 0)
+    b1.addScaledVector(forward, -b1.dot(forward)).normalize()
+    const b2 = new THREE.Vector3().crossVectors(forward, b1).normalize()
+    let sxx = 0, sxy = 0, syy = 0
+    for (const r of rel) {
+      const p = r.clone().addScaledVector(forward, -r.dot(forward))
+      const x = p.dot(b1)
+      const y = p.dot(b2)
+      sxx += x * x
+      sxy += x * y
+      syy += y * y
     }
-    const palmNormal = acc.lengthSq() > 1e-12 ? acc.normalize() : axisNormal.clone()
+    const n = Math.max(1, rel.length)
+    sxx /= n
+    sxy /= n
+    syy /= n
+    const trace = sxx + syy
+    const det = sxx * syy - sxy * sxy
+    const lam = trace / 2 + Math.sqrt(Math.max(0, (trace * trace) / 4 - det))
+    const wide = b1.clone().multiplyScalar(lam - syy).addScaledVector(b2, sxy)
+    if (wide.lengthSq() < 1e-12) wide.copy(b1)
+    wide.normalize()
+    const thin = new THREE.Vector3().crossVectors(forward, wide).normalize()
+
+    // 掌侧定号：手指朝掌心侧卷（指尖比指根更靠哪一侧 = 掌心朝哪一侧）
+    let curlSign = 0
+    const fingerVerts = rel.filter((r) => alongOf(r) > handLen * 0.52)
+    if (fingerVerts.length >= 8) {
+      const uOf = (r: THREE.Vector3) => r.dot(wide)
+      const us = fingerVerts.map(uOf).sort((a, b) => a - b)
+      const uMin = us[0]
+      const uMax = us[us.length - 1]
+      const uMid = (uMin + uMax) / 2
+      const lowCount = fingerVerts.filter((r) => uOf(r) < uMid).length
+      // 拇指在宽轴的一端（那一端顶点稀疏）→ 排除，免得拇指的卷曲方向带偏拟合
+      const thumbLow = lowCount < fingerVerts.length - lowCount
+      const cut = uMin + (uMax - uMin) * 0.2
+      const keep = fingerVerts.filter((r) => (thumbLow ? uOf(r) > cut : uOf(r) < uMax - (cut - uMin)))
+      const fit = leastSquaresQuadratic(keep.map(alongOf), keep.map((r) => r.dot(thin)))
+      if (fit !== null) curlSign = Math.sign(fit[2])
+    }
+    let palmNormal: THREE.Vector3
+    if (curlSign !== 0) {
+      palmNormal = thin.clone().multiplyScalar(curlSign)
+    } else {
+      // 兜底：掌面侧顶点法线均值（碗形掌的碗轴 ≈ 掌面法向），方向取与薄轴同侧
+      const acc = new THREE.Vector3()
+      for (const vi of handVerts) {
+        const r = posOf(vi).sub(wrist)
+        if (r.dot(thin) <= 0) continue
+        acc.add(new THREE.Vector3(
+          geom.bindNormals[vi * 3], geom.bindNormals[vi * 3 + 1], geom.bindNormals[vi * 3 + 2],
+        ))
+      }
+      palmNormal = acc.lengthSq() > 1e-12 ? acc.normalize() : thin.clone()
+      if (palmNormal.dot(thin) < 0) palmNormal.negate()
+    }
     return makeHandFrame(forward, palmNormal)
   }
 
   /**
-   * 手部尺寸：腕→掌心沿手轴距离、掌面到手轴距离（≈掌厚）。
+   * 手部尺寸：腕→触点沿手轴距离、触点离腕沿掌面法向的距离（≈掌厚）。
+   *
+   * 触点 = 「掌搭在面上时真正会碰到面的那一块」：掌心法向深度分布的**支撑脊**
+   * （取 p90 分位，不取 max：max 会被拇指骨节这类局部凸起带偏，实测 61mm vs 真值 21mm）。
+   *
+   * ⚠ along 与 offset 必须来自**同一个触斑**：锚点语义是「触点贴在面上」，
+   * 若 along 取掌心质心、offset 取别处的深度，掌就会歪着贴上去（贴不平）✓。
    *
    * 手掌区域取「沿手轴 20%~45%」的顶点（用投影而不是离腕距离：这个模型手指张开，
    * 最远顶点落在指尖，按距离取会把手掌算到手掌外 ✗）。
@@ -401,22 +516,19 @@ export function createSolverHost(geom: MannequinGeometry, binding: RigBinding): 
     const posOf = (vi: number) => new THREE.Vector3(
       bindPositions[vi * 3], bindPositions[vi * 3 + 1], bindPositions[vi * 3 + 2],
     )
-    let maxAlong = 0
-    for (const vi of handVerts) maxAlong = Math.max(maxAlong, posOf(vi).sub(wrist).dot(frame.forward))
-    const palmVerts = handVerts.filter((vi) => {
-      const a = posOf(vi).sub(wrist).dot(frame.forward)
-      return a > maxAlong * 0.2 && a < maxAlong * 0.45
+    const rel = handVerts.map((vi) => posOf(vi).sub(wrist))
+    const maxA = Math.max(...rel.map((r) => r.dot(frame.forward)))
+    // 掌区（沿手轴 20%~45%）∩ 掌面侧（掌心法向为正的那半边）
+    const palm = rel.filter((r) => {
+      const a = r.dot(frame.forward)
+      return a > maxA * 0.2 && a < maxA * 0.45 && r.dot(frame.normal) > 0
     })
-    const use = palmVerts.length > 0 ? palmVerts : handVerts
-    const centre = new THREE.Vector3()
-    for (const vi of use) centre.add(posOf(vi))
-    centre.multiplyScalar(1 / use.length)
-    const along = centre.sub(wrist).dot(frame.forward)
-    let offset = 0
-    for (const vi of use) {
-      offset = Math.max(offset, posOf(vi).sub(wrist).dot(frame.normal))
-    }
-    return { along, offset }
+    if (palm.length === 0) return { along: maxA * 0.3, offset: 0.015 }
+    const depths = palm.map((r) => r.dot(frame.normal)).sort((a, b) => a - b)
+    const support = depths[Math.min(depths.length - 1, Math.floor(depths.length * 0.9))]
+    const patch = palm.filter((r) => r.dot(frame.normal) >= support - 0.003)
+    const along = patch.reduce((s, r) => s + r.dot(frame.forward), 0) / patch.length
+    return { along, offset: support }
   }
 
   return {

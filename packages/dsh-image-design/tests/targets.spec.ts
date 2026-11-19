@@ -8,14 +8,20 @@ import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import { loadRigFixture } from './helpers/rig-fixture.ts'
 import { createSolverHostFixture } from './helpers/solver-host.ts'
-import { poseContactJoints, handThighGapJoints, skinPositions, dominantBone } from './helpers/pose-contact.ts'
+import { poseContactJoints, handThighGapJoints, handThighContact, skinPositions, dominantBone } from './helpers/pose-contact.ts'
 import { computeBodyMetrics, poseTargets, applySemanticAction, TARGET_PRESET_IDS } from '../src/client/mannequin/targets.ts'
-import { PoseSolver, type PoseTargets } from '../src/client/mannequin/solver.ts'
+import { PoseSolver, type PoseTargets, WRIST_LIMITS } from '../src/client/mannequin/solver.ts'
 import { JOINT_BONES } from '../src/client/mannequin/rig.ts'
 
 const fx = loadRigFixture()
 const { host } = createSolverHostFixture(fx)
 const metrics = computeBodyMetrics((n) => fx.bindWorld.get(n)?.clone() ?? new THREE.Vector3())
+
+/** 手部骨骼在**绑定姿态**下的世界朝向（量掌向偏差的基准；姿势会改骨骼朝向 ✓）。 */
+const bindHandQuat = {
+  Left: fx.byName.get('mixamorigLeftHand')!.getWorldQuaternion(new THREE.Quaternion()),
+  Right: fx.byName.get('mixamorigRightHand')!.getWorldQuaternion(new THREE.Quaternion()),
+}
 
 /** 解一个预设（规范复位 → 落定）。 */
 function solvePreset(id: string): { targets: PoseTargets; joints: ReturnType<PoseSolver['joints']>; settled: boolean } {
@@ -76,6 +82,136 @@ function wristFlexDeg(joints: ReturnType<PoseSolver['joints']>, side: 'Left' | '
   return Math.acos(Math.max(-1, Math.min(1, fore.dot(hand)))) * 180 / Math.PI
 }
 
+/**
+ * 腕的**屈伸角**与**偏折角**（度）：两个独立自由度，分开判。
+ *
+ * 为什么不用「前臂↔手轴的总夹角」当腕屈：手掌平贴在腿上时，前臂与手之间本来
+ * 就有几十度的横向偏折（实测坐姿背伸 33° + 偏折 21°），总夹角把偏折算成腕屈 →
+ * 把合法的背伸判成超限 → 门禁逼着人把腕夹死 → 手贴不平腿面（2026-11-19）。
+ *
+ * @param palmNormal 意图的掌心法向（求解器夹腕用的就是它 ✓，口径一致）
+ */
+function wristBendDeg(
+  joints: ReturnType<PoseSolver['joints']>,
+  side: 'Left' | 'Right',
+  palmNormal: THREE.Vector3,
+): { flex: number; dev: number } {
+  const posed = skinPositions(fx, joints)
+  const wrist = fx.byName.get(`mixamorig${side}Hand`)!.getWorldPosition(new THREE.Vector3())
+  const elbow = fx.byName.get(`mixamorig${side}ForeArm`)!.getWorldPosition(new THREE.Vector3())
+  const probes = host.effectorProbes(side === 'Left' ? 'handL' : 'handR')
+  const tipDir = new THREE.Vector3()
+  for (let i = 1; i < probes.length; i++) {
+    const vi = probes[i]
+    tipDir.add(new THREE.Vector3(
+      posed[vi * 3] - wrist.x,
+      posed[vi * 3 + 1] - wrist.y,
+      posed[vi * 3 + 2] - wrist.z,
+    ))
+  }
+  if (tipDir.lengthSq() < 1e-12) return { flex: 0, dev: 0 }
+  const fore = wrist.clone().sub(elbow).normalize()
+  const hand = tipDir.normalize()
+  const flexDir = palmNormal.clone().addScaledVector(fore, -palmNormal.dot(fore))
+  if (flexDir.lengthSq() < 1e-10) return { flex: 0, dev: 0 }
+  flexDir.normalize()
+  const planeN = new THREE.Vector3().crossVectors(fore, flexDir).normalize()
+  const a = hand.dot(fore)
+  const b = hand.dot(flexDir)
+  const c = hand.dot(planeN)
+  return {
+    flex: Math.atan2(b, a) * 180 / Math.PI,
+    dev: Math.atan2(c, Math.hypot(a, b)) * 180 / Math.PI,
+  }
+}
+
+/**
+ * 意图的掌心法向（与求解器同口径）：
+ * 显式给的 → 锚点推导的（体段径向的反向 = 掌心朝体段）→ 缺省（掌心朝体侧）。
+ */
+function intendedPalmNormal(targets: PoseTargets, side: 'Left' | 'Right'): THREE.Vector3 {
+  const eff = side === 'Left' ? 'handL' : 'handR'
+  const t = targets.effectors[eff]
+  if (t?.normal !== undefined) {
+    return new THREE.Vector3(t.normal.x, t.normal.y, t.normal.z).normalize()
+  }
+  if (t?.anchor !== undefined) {
+    const seg = host.anchorSegment(t.anchor.part)!
+    const axis = seg.b.clone().sub(seg.a).normalize()
+    const up = new THREE.Vector3(0, 1, 0).addScaledVector(axis, -axis.y)
+    if (up.lengthSq() < 1e-9) up.set(0, 0, 1).addScaledVector(axis, -axis.z)
+    up.normalize()
+    const outward = new THREE.Vector3(side === 'Left' ? 1 : -1, 0, 0)
+    outward.addScaledVector(axis, -outward.dot(axis))
+    if (outward.lengthSq() < 1e-9) outward.copy(up)
+    outward.normalize()
+    const theta = (t.anchor.radialDeg * Math.PI) / 180
+    const dir = up.multiplyScalar(Math.cos(theta)).addScaledVector(outward, Math.sin(theta)).normalize()
+    return dir.clone().negate()
+  }
+  const shoulder = fx.byName.get(
+    JOINT_BONES[side === 'Left' ? 'shoulderL' : 'shoulderR'],
+  )!.getWorldPosition(new THREE.Vector3())
+  const inward = new THREE.Vector3(-shoulder.x, 0, 0)
+  if (inward.lengthSq() < 1e-9) inward.set(side === 'Left' ? -1 : 1, 0, 0)
+  return inward.normalize()
+}
+
+/**
+ * 达成掌向（模型空间）：手掌**肉**实际朝哪。
+ *
+ * 量法：把手部顶点按绑定姿态的掌深分成「掌心侧 / 手背侧」，看两边的质心差
+ * （掌心侧多出来的那坨肉指向哪）✓。但这个量法有系统偏差（虎口丘把掌心侧的
+ * 质心拉偏），所以先在**绑定姿态**下量一次当基准（那时真掌向已知 = 静息系
+ * 法向），再把「粗测 → 真掌向」的旋转按姿势的增量旋转搬到当前帧 ✓。
+ *
+ * 这条量法是 F2 的守门人：静息系的掌法向歪 36° 时，粗测出来的掌向也跟着歪，
+ * 门禁会直接把它判出来 ✓。
+ */
+function achievedPalmNormal(joints: ReturnType<PoseSolver['joints']>, side: 'Left' | 'Right'): THREE.Vector3 {
+  const frame = host.restHandFrame(side)
+  const wristBind = fx.bindWorld.get(`mixamorig${side}Hand`)!
+  const handIdx: number[] = []
+  for (let i = 0; i < fx.position.count; i++) {
+    const n = dominantBone(fx, i)
+    if (n === `mixamorig${side}Hand` || n === `mixamorig${side}HandEnd`) handIdx.push(i)
+  }
+  const depthOf = new Map<number, number>()
+  for (const i of handIdx) {
+    depthOf.set(i, new THREE.Vector3(
+      fx.position.getX(i), fx.position.getY(i), fx.position.getZ(i),
+    ).sub(wristBind).dot(frame.normal))
+  }
+  /** 掌心侧质心 − 手背侧质心（给定顶点位置）。 */
+  const crude = (posOf: (i: number) => THREE.Vector3): THREE.Vector3 => {
+    const palm = new THREE.Vector3()
+    const back = new THREE.Vector3()
+    let pn = 0, bn = 0
+    for (const i of handIdx) {
+      const d = depthOf.get(i)!
+      if (d > 0.005) { palm.add(posOf(i)); pn++ }
+      else if (d < -0.005) { back.add(posOf(i)); bn++ }
+    }
+    if (pn === 0 || bn === 0) return frame.normal.clone()
+    palm.multiplyScalar(1 / pn)
+    back.multiplyScalar(1 / bn)
+    return palm.sub(back).normalize()
+  }
+  const bindPosOf = (i: number) => new THREE.Vector3(
+    fx.position.getX(i), fx.position.getY(i), fx.position.getZ(i),
+  )
+  const crudeBind = crude(bindPosOf)
+  const posed = skinPositions(fx, joints)
+  const crudePose = crude((i) => new THREE.Vector3(posed[i * 3], posed[i * 3 + 1], posed[i * 3 + 2]))
+  // 校准旋转（绑定姿态下：粗测 → 真掌向）
+  const calibration = new THREE.Quaternion().setFromUnitVectors(crudeBind, frame.normal)
+  // 姿势的增量旋转（骨骼世界朝向 vs 绑定姿态）
+  const q = fx.byName.get(`mixamorig${side}Hand`)!.getWorldQuaternion(new THREE.Quaternion())
+  const delta = q.clone().multiply(bindHandQuat[side].clone().invert())
+  const calibrationPose = delta.clone().multiply(calibration).multiply(delta.clone().invert())
+  return crudePose.applyQuaternion(calibrationPose).normalize()
+}
+
 describe('姿势目标库：预设求解', () => {
   it('八个预设都能解出来并落定', () => {
     expect(TARGET_PRESET_IDS.length).toBe(8)
@@ -94,17 +230,28 @@ describe('姿势目标库：预设求解', () => {
     }
   })
 
-  it('手搭大腿的预设：手贴腿面（−2mm~35mm），不悬空也不陷进去', () => {
+  it('手搭大腿的预设：掌心贴住腿面（不悬空、不陷进去、掌心朝腿、指尖不扎）', () => {
+    // 判据是「**意图有没有被满足**」，不是「角度对不对」：
+    //   · 掌心/指离腿面 −5mm~+10mm：贴住（0mm 附近），悬空 17~24mm 的旧 bug 判不过 ✓
+    //   · 掌心朝腿：手背贴腿（掌向反了 180°）判不过 ✓
+    //   · 指尖不扎腿：卷着的指尖不该戳进腿面 ✓
     for (const id of ['sit', 'kneel']) {
-      const { joints } = solvePreset(id)
+      const { joints, targets } = solvePreset(id)
       for (const side of ['Left', 'Right'] as const) {
-        const gap = handThighGapJoints(fx, joints, side)
-        expect(gap, `${id} ${side} 手-腿间隙 ${(gap * 1000).toFixed(1)}mm`)
-          .toBeGreaterThanOrEqual(-0.002)
-        // 35mm：掌心平贴腿面的姿势里，腕在接触点后方、掌面斜下触腿
-        //（2026-11-19 掌向显式化后，sit 腕隙 28.8mm 属自然几何）
-        expect(gap, `${id} ${side} 手-腿间隙 ${(gap * 1000).toFixed(1)}mm`)
-          .toBeLessThanOrEqual(0.035)
+        const c = handThighContact(fx, joints, side, host.restHandFrame(side))
+        const where = `${id} ${side}`
+        expect(c.gap, `${where} 手-腿间隙 ${(c.gap * 1000).toFixed(1)}mm`)
+          .toBeGreaterThanOrEqual(-0.005)
+        expect(c.gap, `${where} 手-腿间隙 ${(c.gap * 1000).toFixed(1)}mm`)
+          .toBeLessThanOrEqual(0.010)
+        expect(c.tipGap, `${where} 指尖-腿间隙 ${(c.tipGap * 1000).toFixed(1)}mm`)
+          .toBeGreaterThanOrEqual(-0.005)
+        expect(c.palmFacing, `${where} 贴腿的是掌心还是手背`).toBe(true)
+        // 意图的掌向要真的落到手上（掌心那一侧朝向意图方向）
+        const want = intendedPalmNormal(targets, side)
+        const got = achievedPalmNormal(joints, side)
+        const deg = Math.acos(Math.max(-1, Math.min(1, got.dot(want)))) * 180 / Math.PI
+        expect(deg, `${where} 达成掌向 vs 意图掌向 ${deg.toFixed(0)}°`).toBeLessThanOrEqual(40)
       }
     }
   })
@@ -127,13 +274,19 @@ describe('姿势目标库：预设求解', () => {
     }
   })
 
-  it('腕不过度折（腕屈 ≤ 40°，解剖上限）', () => {
+  it('腕不过度折（掌屈 ≤ 40°、背伸 ≤ 70°、偏折 ≤ 40°，解剖区间）', () => {
+    // 判据按**解剖自由度**分开量（2026-11-19）：手掌平贴在面上时前臂与手之间本来
+    // 就有几十度的横向偏折，拿「总夹角」当腕屈会把合法的背伸判成超限（实测坐姿
+    // 背伸 33° + 偏折 21°）→ 门禁逼着把腕夹死 → 手贴不平腿面 ✓
     for (const id of TARGET_PRESET_IDS) {
-      const { joints } = solvePreset(id)
+      const { joints, targets } = solvePreset(id)
       for (const side of ['Left', 'Right'] as const) {
-        const deg = wristFlexDeg(joints, side)
-        expect(deg, `${id} ${side} 腕屈 ${deg.toFixed(0)}°（前臂轴 vs 指尖方向）`)
-          .toBeLessThanOrEqual(40)
+        const bend = wristBendDeg(joints, side, intendedPalmNormal(targets, side))
+        const flex = bend.flex
+        const dev = bend.dev
+        expect(flex, `${id} ${side} 腕掌屈 ${flex.toFixed(0)}°`).toBeLessThanOrEqual(WRIST_LIMITS.flexionMaxDeg)
+        expect(-flex, `${id} ${side} 腕背伸 ${(-flex).toFixed(0)}°`).toBeLessThanOrEqual(WRIST_LIMITS.extensionMaxDeg)
+        expect(Math.abs(dev), `${id} ${side} 腕偏折 ${dev.toFixed(0)}°`).toBeLessThanOrEqual(WRIST_LIMITS.deviationMaxDeg)
       }
     }
   })
@@ -191,15 +344,19 @@ describe('姿势目标库：目标按体型换算', () => {
 })
 
 describe('姿势目标库：语义动作', () => {
+  // 基座用**真实坐姿**的根与头（骨盆高度 + 上身前倾）：手要够到大腿面，
+  // 躯干得前倾（肩到大腿的距离超过臂长）✓。用直立的合成基座时前臂会压进
+  // 髋部 11.8mm：那是「够不到」的姿态，不是语义动作本身的毛病 ✓
+  const sitTargets = poseTargets('sit', metrics)!
   const base = (): PoseTargets => ({
-    root: { x: 0, y: 0.5, z: 0.02 },
+    root: { ...sitTargets.root },
     effectors: {
       footL: { pos: { x: 0.11, y: 0.1, z: 0.3 } },
       footR: { pos: { x: -0.11, y: 0.1, z: 0.3 } },
       handL: { pos: { x: 0.3, y: 0.9, z: 0.1 } },
       handR: { pos: { x: -0.3, y: 0.9, z: 0.1 } },
     },
-    head: { x: 0, y: 1.2, z: 0.05 },
+    head: { ...sitTargets.head! },
   })
 
   it('手贴大腿：双手换成大腿语义锚点，其他意图不动', () => {
@@ -208,8 +365,8 @@ describe('姿势目标库：语义动作', () => {
     expect(next.effectors.handR?.anchor?.part).toBe('rightThigh')
     expect(next.effectors.handL?.pos).toBeUndefined()
     // 骨盆高度 / 头朝向 / 脚不动
-    expect(next.root).toEqual({ x: 0, y: 0.5, z: 0.02 })
-    expect(next.head).toEqual({ x: 0, y: 1.2, z: 0.05 })
+    expect(next.root).toEqual(base().root)
+    expect(next.head).toEqual(base().head)
     expect(next.effectors.footL).toEqual(base().effectors.footL)
   })
 

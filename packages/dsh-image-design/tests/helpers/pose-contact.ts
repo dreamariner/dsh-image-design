@@ -176,3 +176,93 @@ export function handThighGapJoints(
   }
   return gap
 }
+
+/**
+ * 「手搭大腿」的接触判据（米）：掌心贴住腿面 + 掌心朝腿 + 指尖不扎腿。
+ *
+ * 为什么不用「手离腿面的总距离」：手腕那截肉最厚（掌厚 31mm vs 掌脊 23mm），
+ * 手掌搭在腿上时**腕肉压进腿面几毫米是正常的**（真人就是这样），拿它当
+ * 「穿模」会误判；而悬空的手（原始 bug：手浮在腿面上方 17~24mm）用同一个
+ * 判据又看不出来。分开量才分得清：
+ *   · gap      掌/指离腿面的最小间隙（负 = 陷进去）
+ *   · tipGap   指尖离腿面的最小间隙（卷指会翘起来，不该扎进腿）
+ *   · palmFacing 贴住腿面的那一侧是不是**掌心**（手背贴腿会被判出来 ✓）
+ */
+export interface HandThighContact {
+  /** 掌/指离腿面的最小间隙（米）：负 = 陷进腿里。 */
+  gap: number
+  /** 指尖离腿面的最小间隙（米）。 */
+  tipGap: number
+  /** 贴住腿面的那一侧是不是掌心。 */
+  palmFacing: boolean
+}
+
+/**
+ * 量手相对大腿面的接触情况。
+ *
+ * @param rest 手部静息系（用来分「掌心侧/手背侧」与「指尖」：手的形状是刚体，
+ *             绑定姿态分好类，姿势里不变 ✓）。
+ */
+export function handThighContact(
+  fx: RigFixture,
+  joints: JointRotations,
+  side: 'Left' | 'Right',
+  rest: { forward: THREE.Vector3; normal: THREE.Vector3 },
+): HandThighContact {
+  const posed = skinPositions(fx, joints)
+  const bindNormals = new Float32Array(fx.position.count * 3)
+  for (let i = 0; i < fx.position.count; i++) {
+    bindNormals[i * 3] = fx.normal.getX(i)
+    bindNormals[i * 3 + 1] = fx.normal.getY(i)
+    bindNormals[i * 3 + 2] = fx.normal.getZ(i)
+  }
+  const idx = targetFaceIndices(fx)
+  const surface = new CollisionSurface({ positions: posed, indices: idx, bindNormals })
+  const boneOfFace = (f: number) => dominantBone(fx, idx[f * 3])
+  const at = (bone: string) => fx.byName.get(bone)!.getWorldPosition(new THREE.Vector3())
+  const thigh = new BodyPartCollider(
+    side === 'Left' ? '左大腿' : '右大腿',
+    at(`mixamorig${side}UpLeg`), at(`mixamorig${side}Leg`), surface,
+    (f: number) => boneOfFace(f) === `mixamorig${side}UpLeg`,
+  )
+  const wristBind = fx.bindWorld.get(`mixamorig${side}Hand`)!
+  const bindPos = (i: number) => new THREE.Vector3(
+    fx.position.getX(i), fx.position.getY(i), fx.position.getZ(i),
+  )
+  // 手部顶点在绑定姿态里的分类（刚体 → 姿势里不变 ✓）
+  const handIdx: number[] = []
+  for (let i = 0; i < fx.position.count; i++) {
+    const n = dominantBone(fx, i)
+    if (n === `mixamorig${side}Hand` || n === `mixamorig${side}HandEnd`) handIdx.push(i)
+  }
+  const depthOf = new Map<number, number>()
+  const alongOf = new Map<number, number>()
+  let maxAlong = 0
+  for (const i of handIdx) {
+    const d = bindPos(i).sub(wristBind)
+    depthOf.set(i, d.dot(rest.normal))
+    alongOf.set(i, d.dot(rest.forward))
+    maxAlong = Math.max(maxAlong, alongOf.get(i)!)
+  }
+  const p = new THREE.Vector3()
+  let gap = Infinity
+  let tipGap = Infinity
+  let palmHits = 0
+  let backHits = 0
+  for (const i of handIdx) {
+    p.set(posed[i * 3], posed[i * 3 + 1], posed[i * 3 + 2])
+    const g = thigh.gap(p)
+    if (g < gap) gap = g
+    if (alongOf.get(i)! > maxAlong * 0.85 && g < tipGap) tipGap = g
+    // 接触斑（离腿面 5mm 以内）里，掌心侧 vs 手背侧各占多少
+    if (g < 0.005) {
+      if (depthOf.get(i)! > 0.005) palmHits++
+      else if (depthOf.get(i)! < -0.005) backHits++
+    }
+  }
+  return {
+    gap,
+    tipGap,
+    palmFacing: palmHits + backHits > 0 && palmHits >= backHits,
+  }
+}

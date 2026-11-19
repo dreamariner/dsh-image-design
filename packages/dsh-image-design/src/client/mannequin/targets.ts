@@ -248,10 +248,11 @@ function run(m: BodyMetrics): PoseTargets {
     effectors: {
       footL: { pos: { x: m.hipHalf, y: m.groundY + m.ankleHeight, z: legLen * 0.22 }, pitchDeg: 0 },
       footR: { pos: { x: -m.hipHalf, y: m.groundY + m.ankleHeight + legLen * 0.42, z: -legLen * 0.2 }, pitchDeg: 40 },
-      // 手贴身体矢状面（sx 负 = 略内）：前后摆不外扩 —— sx 外扩会把上臂抬平
-      //（2026-11-19 实测：sx 0.10/0.14 时肘与肩同高、上臂水平外展 90°）✓
-      handL: armHand('L', -0.03, 0.5, -m.armLen * 0.24, 'back'),
-      handR: armHand('R', -0.03, 0.42, m.armLen * 0.26, 'out'),
+      // 手略在肩**外侧**（sx 略正）：腕那截肉厚 ~3cm，腕放在肩的内侧会整只陷进
+      // 胸廓（实测右手入胸 32mm）✓。外扩量取 1.5cm：再大（上臂外展）会把上臂
+      // 抬平（2026-11-19 实测：sx 0.10/0.14 时肘与肩同高、上臂水平外展 90°）✗
+      handL: armHand('L', 0.015, 0.5, -m.armLen * 0.30, 'back'),
+      handR: armHand('R', 0.015, 0.42, m.armLen * 0.44, 'out'),
     },
   }
 }
@@ -269,19 +270,14 @@ function sit(m: BodyMetrics): PoseTargets {
     effectors: {
       footL: { pos: { x: m.hipHalf, y: m.groundY + m.ankleHeight, z: m.thighLen } },
       footR: { pos: { x: -m.hipHalf, y: m.groundY + m.ankleHeight, z: m.thighLen } },
-      // 掌向显式给（2026-11-19）：「搭覆在大腿上」—— 掌心朝下前（指卷顺腿面
-      // 坡度滑向膝，不戳腿面）；掌朝正下会让卷指戳进腿 → 投影把整手抬起悬空
-      //（实测 sit 手-腿间隙 37mm 悬空）✓
-      handL: {
-        anchor: { part: 'leftThigh', t: 0.48, radialDeg: 5, gapM: 0.002 },
-        forward: { x: 0, y: -0.15, z: 0.99 },
-        normal: { x: 0, y: -0.99, z: -0.15 },
-      },
-      handR: {
-        anchor: { part: 'rightThigh', t: 0.48, radialDeg: 5, gapM: 0.002 },
-        forward: { x: 0, y: -0.15, z: 0.99 },
-        normal: { x: 0, y: -0.99, z: -0.15 },
-      },
+      // 掌向/指尖方向**不写死**（2026-11-19 系统性修复）：锚点目标的朝向由
+      // **体段本身**推导：指尖沿体段轴（朝膝）、掌心朝体段面（法向 = 径向反向），
+      // 手就自动「躺」在体段的坡面上：坐姿大腿水平 → 指尖水平；跪坐大腿 33° →
+      // 指尖顺坡 33°，指尖始终贴着腿面滑向膝。
+      // 写死世界方向就是「每个动作拧一次角度」：数值一改，指尖就扎进腿面
+      // （实测 sit 手-腿穿插 29.7mm），换个姿势又要重拧 ✗。
+      handL: { anchor: { part: 'leftThigh', t: 0.48, radialDeg: 5, gapM: 0.002 } },
+      handR: { anchor: { part: 'rightThigh', t: 0.48, radialDeg: 5, gapM: 0.002 } },
     },
     // 上身前倾 17°（手要够到大腿面，肩到大腿的距离超过臂长）
     head: { x: 0, y: hipsY + m.torsoLen * 0.95, z: m.torsoLen * 0.29 },
@@ -301,17 +297,11 @@ function kneel(m: BodyMetrics): PoseTargets {
     effectors: {
       footL: { pos: { x: m.hipHalf, y: m.groundY + 0.131, z: fwd - m.shinLen }, pitchDeg: 52 },
       footR: { pos: { x: -m.hipHalf, y: m.groundY + 0.131, z: fwd - m.shinLen }, pitchDeg: 52 },
-      // 掌向显式给：掌心贴腿面（法向 = 大腿面朝上前，掌朝下前贴腿）；指尖同上交给前臂+旋出
-      handL: {
-        anchor: { part: 'leftThigh', t: 0.42, radialDeg: 8, gapM: 0.002 },
-        forward: { x: 0, y: -0.54, z: 0.84 },
-        normal: { x: 0, y: -0.84, z: -0.54 },
-      },
-      handR: {
-        anchor: { part: 'rightThigh', t: 0.42, radialDeg: 8, gapM: 0.002 },
-        forward: { x: 0, y: -0.54, z: 0.84 },
-        normal: { x: 0, y: -0.84, z: -0.54 },
-      },
+      // 掌向/指尖方向同样由体段推导（见 sit 的说明）：指尖顺大腿坡度朝膝，
+      // 掌心朝大腿面 → 手贴着腿面躺下（2026-11-19 实测：写死世界掌向会让指尖
+      // 扎进腿面 22mm，改成体段推导后贴合误差 -2.4mm ✓）
+      handL: { anchor: { part: 'leftThigh', t: 0.42, radialDeg: 8, gapM: 0.002 } },
+      handR: { anchor: { part: 'rightThigh', t: 0.42, radialDeg: 8, gapM: 0.002 } },
     },
     head: { x: 0, y: hipsY + m.torsoLen * 0.95, z: m.torsoLen * 0.29 },
   }

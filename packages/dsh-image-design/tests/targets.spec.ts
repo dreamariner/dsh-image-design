@@ -50,6 +50,32 @@ function clearanceOf(joints: ReturnType<PoseSolver['joints']>): number {
   return minY - metrics.groundY
 }
 
+/**
+ * 腕屈角（度）：前臂轴（肘→腕）与手轴（腕→指尖）的夹角。
+ *
+ * 手轴取**指尖探针的平均方向**，不取「离腕最远的单个顶点」——HM08 拇指比手指长，
+ * 最远顶点常落在拇指尖上，用它量会把腕屈角虚报 5~10°（2026-11-19）。
+ */
+function wristFlexDeg(joints: ReturnType<PoseSolver['joints']>, side: 'Left' | 'Right'): number {
+  const posed = skinPositions(fx, joints)
+  const wrist = fx.byName.get(`mixamorig${side}Hand`)!.getWorldPosition(new THREE.Vector3())
+  const elbow = fx.byName.get(`mixamorig${side}ForeArm`)!.getWorldPosition(new THREE.Vector3())
+  const probes = host.effectorProbes(side === 'Left' ? 'handL' : 'handR')
+  const tipDir = new THREE.Vector3()
+  for (let i = 1; i < probes.length; i++) {
+    const vi = probes[i]
+    tipDir.add(new THREE.Vector3(
+      posed[vi * 3] - wrist.x,
+      posed[vi * 3 + 1] - wrist.y,
+      posed[vi * 3 + 2] - wrist.z,
+    ))
+  }
+  if (tipDir.lengthSq() < 1e-12) return 0
+  const fore = wrist.clone().sub(elbow).normalize()
+  const hand = tipDir.normalize()
+  return Math.acos(Math.max(-1, Math.min(1, fore.dot(hand)))) * 180 / Math.PI
+}
+
 describe('姿势目标库：预设求解', () => {
   it('八个预设都能解出来并落定', () => {
     expect(TARGET_PRESET_IDS.length).toBe(8)
@@ -98,6 +124,40 @@ describe('姿势目标库：预设求解', () => {
       expect(jointAngleDeg('shoulderR', 'elbowR', 'wristR'), `${id} 右肘`).toBeLessThanOrEqual(182)
       expect(jointAngleDeg('hipL', 'kneeL', 'ankleL'), `${id} 左膝`).toBeLessThanOrEqual(182)
       expect(jointAngleDeg('hipR', 'kneeR', 'ankleR'), `${id} 右膝`).toBeLessThanOrEqual(182)
+    }
+  })
+
+  it('腕不过度折（腕屈 ≤ 40°，解剖上限）', () => {
+    for (const id of TARGET_PRESET_IDS) {
+      const { joints } = solvePreset(id)
+      for (const side of ['Left', 'Right'] as const) {
+        const deg = wristFlexDeg(joints, side)
+        expect(deg, `${id} ${side} 腕屈 ${deg.toFixed(0)}°（前臂轴 vs 指尖方向）`)
+          .toBeLessThanOrEqual(40)
+      }
+    }
+  })
+
+  it('腕不震荡：解完后腕关节逐子步稳定（无 2 周期翻转）', () => {
+    // 回归门禁（2026-11-19）：keepFingersOut 曾经按「上一子步姿势的探针」判指尖
+    // 穿模 → 腕转 → 探针动 → 再转，形成 2 周期震荡（实机「手腕拧成那样」，
+    // 实测腕关节每子步摆 9°，求解器永不落定）。判据改成意图手系定向的静态
+    // 手体积后，腕的每子步变化应单调收敛到 0 ✓。
+    for (const id of TARGET_PRESET_IDS) {
+      const solver = new PoseSolver(host)
+      solver.setTargets(poseTargets(id, metrics)!)
+      solver.step(20)
+      const prev = solver.joints()
+      let worst = 0
+      for (let i = 0; i < 20; i++) {
+        solver.step(1)
+        const cur = solver.joints()
+        for (const key of ['wristL', 'wristR'] as const) {
+          worst = Math.max(worst, Math.abs(cur[key].x - prev[key].x), Math.abs(cur[key].y - prev[key].y), Math.abs(cur[key].z - prev[key].z))
+        }
+        Object.assign(prev, cur)
+      }
+      expect(worst, `${id} 腕逐子步漂移 ${(worst * 180 / Math.PI).toFixed(2)}°`).toBeLessThan(0.01)
     }
   })
 
@@ -168,7 +228,7 @@ describe('姿势目标库：语义动作', () => {
     // 指尖沿「肩→手」臂线（2026-11-19：不写死朝地，摆臂/垂臂的腕才不折），
     // 外张 0.032 的臂线带一点朝外分量，朝下为主
     expect(next.effectors.handL?.forward!.y).toBeLessThan(-0.9)
-    expect(Math.abs(next.effectors.handL?.forward!.x)).toBeLessThan(0.15)
+    expect(Math.abs(next.effectors.handL?.forward!.x ?? 0)).toBeLessThan(0.15)
     expect(next.effectors.handR?.forward!.y).toBeLessThan(-0.9)
   })
 

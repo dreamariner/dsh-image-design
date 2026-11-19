@@ -42,18 +42,30 @@ function handVerts(side: 'Left' | 'Right'): THREE.Vector3[] {
   return out
 }
 
-/** 腕屈角（度）：前臂轴（肘→腕）与手轴（腕→最远手顶点 = 指尖）的几何夹角。 */
+/** 腕屈角（度）：前臂轴（肘→腕）与手轴（腕→指尖）的几何夹角。
+ *
+ * 手轴取**指尖探针的平均方向**，不取「离腕最远的单个顶点」—— 最远顶点常常是
+ * 拇指尖（HM08 拇指长），用它量会把腕屈角虚报 5~10°（2026-11-19）。 */
 function wristFlexDeg(side: 'Left' | 'Right'): number {
   const elbow = boneAt(`mixamorig${side}ForeArm`)
   const wrist = boneAt(`mixamorig${side}Hand`)
-  let far = wrist
-  let farD = 0
-  for (const v of handVerts(side)) {
-    const d = v.distanceTo(wrist)
-    if (d > farD) { farD = d; far = v }
+  const posed = skinPositions(fx, joints)
+  const probes = host.effectorProbes(side === 'Left' ? 'handL' : 'handR')
+  // 探针[0] 是掌心，其余是指尖 → 指尖平均方向 = 手轴
+  const tipDir = new THREE.Vector3()
+  let tips = 0
+  for (let i = 1; i < probes.length; i++) {
+    const vi = probes[i]
+    tipDir.add(new THREE.Vector3(
+      posed[vi * 3] - wrist.x,
+      posed[vi * 3 + 1] - wrist.y,
+      posed[vi * 3 + 2] - wrist.z,
+    ))
+    tips++
   }
+  if (tips === 0) return NaN
   const fore = wrist.clone().sub(elbow).normalize()
-  const hand = far.clone().sub(wrist).normalize()
+  const hand = tipDir.normalize()
   return (Math.acos(Math.max(-1, Math.min(1, fore.dot(hand)))) * 180) / Math.PI
 }
 

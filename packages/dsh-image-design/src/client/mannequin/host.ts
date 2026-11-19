@@ -80,7 +80,10 @@ const COLLISION_SEGMENTS: SegmentSpec[] = [
   // 落在 y 1.28~1.43 的空档里，代理全说「体外」而网格审计说插进胸口 66~166mm。
   // 顶点集必须带上 neck：上胸/锁骨带的顶点大量挂在 neck 骨上（spine3 只有 189 个、
   // |x| p92=0.082，量出来的胸半宽只有 6.5cm，真胸 ~12cm → 代理细成一根棍，挡不住）✓。
-  { name: 'torsoChest', aBone: 'mixamorigSpine3', bBone: 'mixamorigNeck', verts: ['mixamorigSpine3', 'mixamorigNeck'] },
+  // 再带上**锁骨骨**（2026-11-19）：胸大肌与三角肌根部挂在 clavicle 上，
+  // 漏了它腋下/胸前的代理薄一圈 → 手横穿胸口时上臂擦进腋下网格
+  // （实测上臂入胸 17.6mm，代理判体外）✓。
+  { name: 'torsoChest', aBone: 'mixamorigSpine3', bBone: 'mixamorigNeck', verts: ['mixamorigSpine3', 'mixamorigNeck', 'mixamorigLeftShoulder', 'mixamorigRightShoulder'] },
 ]
 
 /** 语义锚点用的整段代理：「手搭在大腿中段」说的是整条腿。 */
@@ -122,6 +125,7 @@ export function createSolverHost(geom: MannequinGeometry, binding: RigBinding): 
   // ── 末端碰撞探针 ─────────────────────────────────────────────────────
   // 约定：probes[0] = 掌心（脚则是脚底中段），其余是指尖 / 脚尖 / 脚跟。
   const probeCache = new Map<EndEffectorId, number[]>()
+  const volumeCache = new Map<EndEffectorId, number[]>()
   const probes = (id: EndEffectorId): number[] => {
     const cached = probeCache.get(id)
     if (cached !== undefined) return cached
@@ -217,6 +221,29 @@ export function createSolverHost(geom: MannequinGeometry, binding: RigBinding): 
       for (const l of lows) out.push(l.vi)
     }
     probeCache.set(id, out)
+    return out
+  }
+
+  /**
+   * 末端的整块体积顶点（手 = 全部手掌/手指顶点）。
+   *
+   * 用途：算手的**外形包络**（支撑点 ≈ 凸包角点）。探针只有「掌心 + 指尖」
+   * 几个点，会漏掉掌缘角点 —— walk 实测右手指尖入腿 53mm、探针只判 5mm ✓。
+   * 主导权重不过半的退化顶点照样剔除（同 probes 的口径）✓。
+   */
+  const volumeVerts = (id: EndEffectorId): number[] => {
+    const cached = volumeCache.get(id)
+    if (cached !== undefined) return cached
+    const isHand = id === 'handL' || id === 'handR'
+    const side = effectorSide(id)
+    const bones = isHand
+      ? [`mixamorig${side}Hand`, `mixamorig${side}HandEnd`]
+      : [`mixamorig${side}Foot`, `mixamorig${side}ToeBase`]
+    const verts: number[] = []
+    for (const bn of bones) for (const vi of vertsOfBone.get(bn) ?? []) verts.push(vi)
+    const strong = verts.filter((vi) => geom.dominantWeight(vi) >= 0.5)
+    const out = strong.length > 0 ? strong : verts
+    volumeCache.set(id, out)
     return out
   }
 
@@ -398,6 +425,7 @@ export function createSolverHost(geom: MannequinGeometry, binding: RigBinding): 
     boneAt: (name) => geom.boneAt(name),
     boneParentQuat: (name) => geom.boneParentQuat(name),
     effectorProbes: probes,
+    effectorVolumeVerts: volumeVerts,
     segments,
     anchorSegment,
     restHandFrame,

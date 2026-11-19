@@ -29,7 +29,7 @@ const poseId = process.argv[2] ?? 'a-pose'
 const outPath = process.argv[3] ?? '/tmp/mh-preview/mannequin.png'
 const GRID = process.env.GRID === '1'
 const YAW = process.env.YAW ? Number(process.env.YAW) : 0
-const HAND = process.env.HAND === '1'
+const HAND = process.env.HAND !== undefined && process.env.HAND !== '0' && process.env.HAND !== ''
 
 // ── 读 GLB ────────────────────────────────────────────────────────────────
 const io = new NodeIO()
@@ -208,7 +208,13 @@ function renderMesh(mesh, cam, W, H, yaw, zbuf, color, proj) {
     const len = Math.hypot(nx, ny, nz) || 1
     nx /= len; ny /= len; nz /= len
     const sh = Math.max(0.12, 0.32 + 0.68 * Math.abs(nx * light[0] + ny * light[1] + nz * light[2]))
-    const rgb = [Math.round(mesh.color[0] * sh), Math.round(mesh.color[1] * sh), Math.round(mesh.color[2] * sh)]
+    const base = mesh.color
+    const rgb = [Math.round(base[0] * sh), Math.round(base[1] * sh), Math.round(base[2] * sh)]
+    // 顶点色模式（PALMCOLOR=1）：按顶点给色，光照仍作用
+    const vc = mesh.vcolor
+    const cA = vc === undefined ? rgb : [vc[ia * 3] * sh, vc[ia * 3 + 1] * sh, vc[ia * 3 + 2] * sh]
+    const cB = vc === undefined ? rgb : [vc[ib * 3] * sh, vc[ib * 3 + 1] * sh, vc[ib * 3 + 2] * sh]
+    const cC = vc === undefined ? rgb : [vc[ic * 3] * sh, vc[ic * 3 + 1] * sh, vc[ic * 3 + 2] * sh]
     const x0 = px(a[0]), y0 = py(a[1]), x1 = px(b[0]), y1 = py(b[1]), x2 = px(c[0]), y2 = py(c[1])
     const minx = Math.max(0, Math.floor(Math.min(x0, x1, x2))), maxx = Math.min(W - 1, Math.ceil(Math.max(x0, x1, x2)))
     const miny = Math.max(0, Math.floor(Math.min(y0, y1, y2))), maxy = Math.min(H - 1, Math.ceil(Math.max(y0, y1, y2)))
@@ -221,7 +227,10 @@ function renderMesh(mesh, cam, W, H, yaw, zbuf, color, proj) {
         const w1 = ((x2 - pxc) * (y0 - pyc) - (x0 - pxc) * (y2 - pyc)) / area
         const w2 = 1 - w0 - w1
         if (w0 < 0 || w1 < 0 || w2 < 0) continue
-        put(x, y, w0 * a[2] + w1 * b[2] + w2 * c[2], rgb)
+        put(x, y, w0 * a[2] + w1 * b[2] + w2 * c[2],
+          [w0 * cA[0] + w1 * cB[0] + w2 * cC[0],
+           w0 * cA[1] + w1 * cB[1] + w2 * cC[1],
+           w0 * cA[2] + w1 * cB[2] + w2 * cC[2]])
       }
     }
   }
@@ -302,7 +311,15 @@ function poseMeshes(poseId) {
   ]
   if (HAND) {
     // 只保留手部（+ 手腕）三角形：评审手部细节时避免带出躯干
-    const handBones = new Set(['mixamorigLeftHand', 'mixamorigLeftHandEnd', 'mixamorigRightHand', 'mixamorigRightHandEnd'])
+    // HAND=left|right|both：单手模式才能把一只手放大到能判掌心朝向
+    const handSide = process.env.HAND ?? 'both'
+    const handBones = new Set(
+      handSide === 'left'
+        ? ['mixamorigLeftHand', 'mixamorigLeftHandEnd']
+        : handSide === 'right'
+          ? ['mixamorigRightHand', 'mixamorigRightHandEnd']
+          : ['mixamorigLeftHand', 'mixamorigLeftHandEnd', 'mixamorigRightHand', 'mixamorigRightHandEnd'],
+    )
     const dom = (vi) => {
       let bw = 0, bj = 0
       for (let k = 0; k < 4; k++) {
@@ -324,6 +341,26 @@ function poseMeshes(poseId) {
     meshes.push({ pos: body, index: keepIdx, color: [196, 176, 158] })
     // 投影裁到手部（评审手部细节时全身包围盒会把手缩成几个像素）
     meshes[0].crop = Array.from(keepVerts)
+    if (process.env.PALMCOLOR === '1') {
+      // 掌心诊断色：红 = 静息帧「掌法线」所指的那一面，蓝 = 另一面。
+      // 肉眼看红面是掌心还是手背 → 定出静息帧的符号约定（历史翻车根源就在这）。
+      const side = handSide === 'right' ? 'Right' : 'Left'
+      const rest = solverHost.restHandFrame(side)
+      const vc = new Float32Array(body.length)
+      for (let vi = 0; vi < pos.length / 3; vi++) {
+        const n = new THREE.Vector3(nor[vi * 3], nor[vi * 3 + 1], nor[vi * 3 + 2])
+        const along = new THREE.Vector3(pos[vi * 3], pos[vi * 3 + 1], pos[vi * 3 + 2])
+          .sub(rigFixture.bindWorld.get(`mixamorig${side}Hand`))
+          .dot(rest.forward)
+        const isPalmBand = along > 0.02 && along < 0.12
+        const hit = n.dot(rest.normal) > 0
+        vc[vi * 3] = hit ? 220 : 40
+        vc[vi * 3 + 1] = hit ? 40 : 60
+        vc[vi * 3 + 2] = hit ? 40 : 200
+        if (!isPalmBand) { vc[vi * 3] = 190; vc[vi * 3 + 1] = 190; vc[vi * 3 + 2] = 190 }
+      }
+      meshes[0].vcolor = vc
+    }
   } else if (process.env.CROP === 'hands') {
     // 只画手 + 大腿（看「手有没有落在大腿面上」用），投影裁到这两块的包围盒
     const want = new Set(['mixamorigLeftHand', 'mixamorigLeftHandEnd', 'mixamorigRightHand', 'mixamorigRightHandEnd',

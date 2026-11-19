@@ -240,8 +240,10 @@ function run(m: BodyMetrics): PoseTargets {
     effectors: {
       footL: { pos: { x: m.hipHalf, y: m.groundY + m.ankleHeight, z: legLen * 0.22 }, pitchDeg: 0 },
       footR: { pos: { x: -m.hipHalf, y: m.groundY + m.ankleHeight + legLen * 0.42, z: -legLen * 0.2 }, pitchDeg: 40 },
-      handL: armHand('L', 0.10, 0.42, -m.armLen * 0.16, 'back'),
-      handR: armHand('R', 0.14, 0.32, m.armLen * 0.30, 'out'),
+      // 手贴身体矢状面（sx 负 = 略内）：前后摆不外扩 —— sx 外扩会把上臂抬平
+      //（2026-11-19 实测：sx 0.10/0.14 时肘与肩同高、上臂水平外展 90°）✓
+      handL: armHand('L', -0.03, 0.5, -m.armLen * 0.24, 'back'),
+      handR: armHand('R', -0.03, 0.42, m.armLen * 0.26, 'out'),
     },
   }
 }

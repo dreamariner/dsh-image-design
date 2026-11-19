@@ -188,10 +188,13 @@ export const DEFAULT_SOLVER_CONFIG: SolverConfig = {
 /** 换肘朝向要领先多少（米）才换：防抖用。 */
 const POLE_SWITCH_MARGIN = 0.03
 
+// 垂臂/摆臂的肘天然在肩**下方**（重力 + 解剖）：pole 候选带向下分量，
+// 否则链松弛时（手目标近肩）肘被平举在肩高（2026-11-19 实测 run 双肘 dy≈0、
+// 上臂水平外展 90°）。'up' 保留向上（叉腰类姿势肘要抬）。
 const POLE_CANDIDATES: readonly { key: string; dir: [number, number, number] }[] = [
-  { key: 'back', dir: [0.25, -0.15, -1] },
-  { key: 'out', dir: [1, -0.15, -0.3] },
-  { key: 'backOut', dir: [0.75, -0.2, -0.75] },
+  { key: 'back', dir: [0.3, -0.85, -0.55] },
+  { key: 'out', dir: [1, -0.75, -0.15] },
+  { key: 'backOut', dir: [0.7, -0.7, -0.7] },
   { key: 'up', dir: [0.3, 0.9, -0.4] },
 ]
 
@@ -630,6 +633,18 @@ export class PoseSolver {
         }
       }
       return clearance
+    }
+    // 解剖意图优先（2026-11-19 实机修复）：hint 的 pole 无身体冲突就直接用。
+    // 纯按「链离身体最远」打分会把松垂摆臂的肘理性地举到肩高（上臂水平外展
+    // 90°、实机「支架手」）—— 肘该在肩下方是解剖事实，不是间隙优化题 ✓。
+    // 有冲突（hinted 肘/链穿进身体）才回退到按间隙选 ✓。
+    const hinted = POLE_CANDIDATES.find((c) => c.key === hint)
+    if (hinted !== undefined) {
+      const pole = new THREE.Vector3(hinted.dir[0] * lateral, hinted.dir[1], hinted.dir[2]).normalize()
+      if (scoreOf(pole) >= 0) {
+        this.poleChoice[side] = pole
+        return pole
+      }
     }
     let best = current
     let bestScore = scoreOf(current)

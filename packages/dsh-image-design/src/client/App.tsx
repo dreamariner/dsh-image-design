@@ -1,4 +1,4 @@
-// 图片设计面板：参数表单 + 结果画廊 + 对比浮层 + 历史列表。
+// 图片设计面板：左侧栏导航（生成 / 素体 / 历史）+ 参数表单 + 结果画廊 + 对比浮层 + 历史列表。
 //
 // 纪律（media-platforms 实证过的坑）：
 //   · 事件处理器里读状态用 getState()（useClientState 是 Hook，只能在渲染期调）；
@@ -20,8 +20,9 @@ import { ImageLightbox } from './ui/image-lightbox.tsx'
 import { Separator } from './ui/separator.tsx'
 import { IconCloseOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconWarningOutlineRegular } from './ui/icons.tsx'
 import type { GenerateWireArgs, ImageDesignApi, ModelKey, RunStatus, RunView } from './api.ts'
-import { getState, patchForm, setState, useClientState, type FormState } from './state.ts'
+import { getState, patchForm, setState, useClientState, type FormState, type PanelTab } from './state.ts'
 import { MannequinView } from './MannequinView.tsx'
+import { IconClockOutlineRegular, IconSparkleOutlineRegular, IconUserOutlineRegular } from './ui/icons.tsx'
 
 const IMAGE_KEY = (runId: string, file: string): string => `${runId}/${file}`
 
@@ -88,6 +89,13 @@ export function buildWireArgs(f: FormState): GenerateWireArgs {
 
 // ── 主面板 ───────────────────────────────────────────────────────────────
 
+/** 侧栏导航项（顺序即渲染序）。 */
+const NAV_ITEMS: ReadonlyArray<{ tab: PanelTab; label: string; icon: (props: { size?: number; className?: string }) => ReactNode }> = [
+  { tab: 'generate', label: '生成', icon: IconSparkleOutlineRegular },
+  { tab: 'mannequin', label: '素体', icon: IconUserOutlineRegular },
+  { tab: 'history', label: '历史', icon: IconClockOutlineRegular },
+]
+
 export function ImageDesignPanel({ api }: { api: ImageDesignApi }): ReactNode {
   const s = useClientState()
   useRunImages(api)
@@ -131,41 +139,45 @@ export function ImageDesignPanel({ api }: { api: ImageDesignApi }): ReactNode {
 
   return (
     <div className="idi-root">
-      <div className="idi-bar">
-        <SegmentedControl
-          id="idi-tab"
-          label="视图"
-          value={s.tab}
-          options={[
-            { value: 'generate', label: '生成' },
-            { value: 'mannequin', label: '素体' },
-            { value: 'history', label: '历史' },
-          ]}
-          onChange={(v) => { setState({ tab: v }); }}
-        />
-        <span className="idi-spacer" />
-        {s.busy && (
-          <span className="idi-row">
-            <Spinner />
-            {elapsed !== null && <span className="idi-meta">生成中 · {elapsed}s</span>}
-          </span>
-        )}
-      </div>
-      {s.error !== '' && (
-        <div className="idi-error" role="alert">
-          <IconWarningOutlineRegular size={14} />
-          <span className="idi-grow">{s.error}</span>
-          <button type="button" className="idi-error-dismiss" aria-label="关闭错误提示"
-            onClick={() => { setState({ error: '' }) }}>
-            <IconCloseOutlineRegular size={12} />
+      <nav className="idi-nav" aria-label="视图导航">
+        {NAV_ITEMS.map((item) => (
+          <button
+            key={item.tab}
+            type="button"
+            className="idi-nav-item"
+            data-active={s.tab === item.tab}
+            aria-current={s.tab === item.tab ? 'page' : undefined}
+            onClick={() => { setState({ tab: item.tab }) }}
+          >
+            <item.icon size={16} />
+            <span>{item.label}</span>
           </button>
-        </div>
-      )}
-      {s.tab === 'generate'
-        ? <GenerateView api={api} onGenerate={() => { void doGenerate() }} />
-        : s.tab === 'mannequin'
-          ? <MannequinView api={api} />
-          : <HistoryView api={api} />}
+        ))}
+        <span className="idi-nav-spacer" />
+        {s.busy && (
+          <div className="idi-nav-busy">
+            <Spinner />
+            {elapsed !== null && <span className="idi-nav-busy-text">生成中 · {elapsed}s</span>}
+          </div>
+        )}
+      </nav>
+      <div className="idi-content">
+        {s.error !== '' && (
+          <div className="idi-error" role="alert">
+            <IconWarningOutlineRegular size={14} />
+            <span className="idi-grow">{s.error}</span>
+            <button type="button" className="idi-error-dismiss" aria-label="关闭错误提示"
+              onClick={() => { setState({ error: '' }) }}>
+              <IconCloseOutlineRegular size={12} />
+            </button>
+          </div>
+        )}
+        {s.tab === 'generate'
+          ? <GenerateView api={api} onGenerate={() => { void doGenerate() }} />
+          : s.tab === 'mannequin'
+            ? <MannequinView api={api} />
+            : <HistoryView api={api} />}
+      </div>
       {s.lightbox !== null && (
         <ImageLightbox
           src={s.lightbox.url}

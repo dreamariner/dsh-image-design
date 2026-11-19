@@ -29,12 +29,31 @@ import { styles as separatorStyles } from './ui/separator-css.ts'
 import { styles as sliderStyles } from './ui/slider-css.ts'
 
 export const PANEL_CSS = `
-.idi-root { position: relative; display: flex; flex-direction: column;
+.idi-root { position: relative; display: flex; flex-direction: row;
   height: 100%; min-width: 0; color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-bg-layer-1); }
 
-.idi-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px;
-  border-bottom: 0.5px solid var(--dsw-alias-border-l2); flex: none; }
+/* 侧栏导航：竖排图标 + 文字；busy 指示钉在底部 */
+.idi-nav { flex: none; width: 68px; display: flex; flex-direction: column;
+  align-items: stretch; gap: 4px; padding: 10px 6px;
+  border-right: 0.5px solid var(--dsw-alias-border-l2); }
+.idi-nav-item { display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 8px 2px; border: none; background: transparent; cursor: pointer;
+  border-radius: var(--dsw-radius-md); font-size: 11px; line-height: 16px;
+  color: var(--dsw-alias-label-secondary); }
+.idi-nav-item:hover { background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary); }
+.idi-nav-item[data-active="true"] { background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-state-business-primary); }
+.idi-nav-spacer { flex: 1; }
+.idi-nav-busy { flex: none; display: flex; flex-direction: column; align-items: center;
+  gap: 4px; padding: 4px 0; }
+.idi-nav-busy-text { font-size: 10px; line-height: 14px;
+  color: var(--dsw-alias-label-tertiary); white-space: nowrap; }
+
+/* 内容区：错误条浮在顶部，三视图各自吃满剩余高度 */
+.idi-content { flex: 1; min-width: 0; min-height: 0; display: flex;
+  flex-direction: column; }
 .idi-spacer { flex: 1; }
 
 .idi-body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px 16px;
@@ -48,7 +67,8 @@ export const PANEL_CSS = `
 .idi-w96 { width: 96px; flex: none; }
 
 .idi-hint { font-size: 11px; line-height: 16px; color: var(--dsw-alias-label-tertiary); }
-.idi-error { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px;
+.idi-error { flex: none; display: flex; gap: 8px; align-items: flex-start; margin: 8px 12px 0;
+  padding: 8px 10px;
   border: 0.5px solid var(--dsw-alias-state-error-primary); border-radius: var(--dsw-radius-md);
   color: var(--dsw-alias-state-error-primary); font-size: 12px; line-height: 18px;
   white-space: pre-wrap; word-break: break-word; }

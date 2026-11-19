@@ -7,6 +7,9 @@
 // （被复用者先注入；复制件的类名共存于同一个 <style>，同特异性规则后者胜）。
 // 插件自有类用 idi- 前缀，不与组件类相撞，拼在最后。
 
+// dsh-ui-cell 基础层：间距刻度 --dsh-space-*，组件样式靠它解析，必须排注入第一位
+// （0.6.1 复制件起，组件内的间距一律走刻度变量；漏注入 = 那条声明被静默丢弃）
+import { styles as foundationStyles } from './ui/foundation-css.ts'
 import { styles as buttonStyles } from './ui/button-css.ts'
 import { styles as inputStyles } from './ui/input-css.ts'
 import { styles as textareaStyles } from './ui/textarea-css.ts'
@@ -170,11 +173,15 @@ export const PANEL_CSS = `
   background: var(--dsw-alias-bg-base); }
 `
 
+/* 0.6.1 升级：照 add note 的依赖序重排（foundation 第一）。
+ * menu / menu-group / menu-surface / toast / card / scroll-area / skeleton /
+ * zoom-controls 是闭包带出的未用复制件（0 处引用），维持不接线。 */
 const CELL_STYLES = [
-  buttonStyles, inputStyles, textareaStyles, selectStyles, segmentedControlStyles,
-  switchStyles, tagStyles, shortcutKeysStyles, tooltipStyles, spinnerStyles,
-  emptyStyles, imagePreviewStyles, imageLightboxStyles, fieldStyles, labelStyles,
-  separatorStyles, sliderStyles,
+  foundationStyles,
+  buttonStyles, emptyStyles, fieldStyles, imagePreviewStyles, imageLightboxStyles,
+  inputStyles, labelStyles, shortcutKeysStyles, tooltipStyles,
+  segmentedControlStyles, selectStyles, separatorStyles, sliderStyles,
+  spinnerStyles, switchStyles, tagStyles, textareaStyles,
 ]
 
 export function injectPanelStyles(): () => void {

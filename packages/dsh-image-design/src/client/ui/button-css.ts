@@ -1,6 +1,7 @@
 // button 样式（由 dsh-ui-cell add 生成，勿手改）。
 // 源：dsh-ui-cell/src/button.css @ duc- 前缀 + 组件名段（keyframes 同规则改名）。
 // 第三方插件的 client 构建无 CSS 管线，样式走运行时 <style> 注入（见插件的 panel-css 约定）。
+// 源里的 :global(...) 外壳已剥掉（运行期注入的纯 CSS 不认这个伪类，内层契约类名原样保留）。
 
 /** 类名表：键是原类名，值是加前缀与组件名段后的最终类名。 */
 export const css: Record<string, string> = {

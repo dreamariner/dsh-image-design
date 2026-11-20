@@ -68,3 +68,4 @@ issue 007 把三视图入口从顶栏 Tab 改成左侧栏时，用的是手写 `
 - 2026-11-20 08:22  jianan  创建；同轮完成迁移，typecheck / test / build 全绿 + 实机复验通过，直接关闭
 - 2026-11-20 08:26  jianan  迭代（用户复验后要求）：补收起/展开交互，受控 navCollapsed + header 槽收起钮 + collapsedWidth 48；实机复验收起/展开通过
 - 2026-11-20 08:35  jianan  迭代（用户反馈）：收起钮换常规侧栏折叠图标 panel-left-outline（两态同枚，aria-expanded 表达状态）；DSH 实例中途重启过一轮（地址变 64730），重连后 DOM 级复验收起/展开两态通过
+- 2026-11-20 08:40  jianan  修复（用户反馈「折叠态图标只有一个点」）：`.idi-nav-toggle { padding: 0 }` 被后注入的 `.duc-button-sm { padding: 0 10px }` 同特异性覆盖（PANEL_CSS 先于 CELL_STYLES 注入），折叠态 24px 钮内容盒只剩 4px，14px 图标被 flex 压成 3.5px 的点；改挂双类 `.idi-nav-toggle.duc-button` 提权重，实机复验折叠态 svg 14×14、展开态 96px 正常。附带教训：idi 样式要覆盖 duc 复制件属性时必须提特异性，拼在前面的同特异性规则必输

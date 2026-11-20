@@ -37,7 +37,11 @@ issue 007 把三视图入口从顶栏 Tab 改成左侧栏时，用的是手写 `
   回写 `PanelTab`，`NAV_ITEMS` 的 icon 改 ReactNode）；busy 指示移进 `footer` 槽。
 - 宽度 68 → 96：复制件的条目是横排（icon + 文字同行，`--dsw-font-s-14`），
   96px 才容得下两字标签；旧手写版的竖排 icon 上文字下的形态是自造观感，弃。
-- 替代方案（否决）：`collapsed` 图标窄条：图标-only 伤可读性，面板无收起需求。
+- 收起/展开交互（用户复验后点名要的，初版曾判「面板无收起需求」而否决）：受控
+  `navCollapsed` 进 ClientState，`Sidebar collapsed / onCollapsedChange` 接线；
+  header 槽放收起钮（chevron 方向随态翻转 + `aria-expanded`），`collapsedWidth 48`
+  下条目自动图标化（label 转 title 悬浮提示，SidebarNav 收起态自理）；收起态
+  busy 只留 spinner（48px 容不下「生成中 · Ns」）。
 
 ## 影响面
 
@@ -50,6 +54,8 @@ issue 007 把三视图入口从顶栏 Tab 改成左侧栏时，用的是手写 `
 - [x] `pnpm typecheck` / `pnpm test`（194 passed）/ `pnpm build` 全绿
 - [x] 实机（内置浏览器连 DSH web 端）：复制件侧栏渲染正确，三视图切换、
       素体 3D 视口、历史载入全部复验通过（2026-11-20）
+- [x] 实机：收起/展开交互复验通过（2026-11-20 迭代）：header 收起钮、48px 图标条、
+      条目居中、内容区让宽、再展开还原
 
 ## 依赖
 
@@ -58,3 +64,4 @@ issue 007 把三视图入口从顶栏 Tab 改成左侧栏时，用的是手写 `
 ## 进度日志
 
 - 2026-11-20 08:22  jianan  创建；同轮完成迁移，typecheck / test / build 全绿 + 实机复验通过，直接关闭
+- 2026-11-20 08:26  jianan  迭代（用户复验后要求）：补收起/展开交互，受控 navCollapsed + header 槽收起钮 + collapsedWidth 48；实机复验收起/展开通过

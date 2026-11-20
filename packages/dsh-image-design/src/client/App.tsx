@@ -22,6 +22,8 @@ import { IconCloseOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegu
 import type { GenerateWireArgs, ImageDesignApi, ModelKey, RunStatus, RunView } from './api.ts'
 import { getState, patchForm, setState, useClientState, type FormState, type PanelTab } from './state.ts'
 import { MannequinView } from './MannequinView.tsx'
+import { Sidebar } from './ui/sidebar.tsx'
+import { SidebarNav } from './ui/sidebar-nav.tsx'
 import { IconClockOutlineRegular, IconSparkleOutlineRegular, IconUserOutlineRegular } from './ui/icons.tsx'
 
 const IMAGE_KEY = (runId: string, file: string): string => `${runId}/${file}`
@@ -90,10 +92,10 @@ export function buildWireArgs(f: FormState): GenerateWireArgs {
 // ── 主面板 ───────────────────────────────────────────────────────────────
 
 /** 侧栏导航项（顺序即渲染序）。 */
-const NAV_ITEMS: ReadonlyArray<{ tab: PanelTab; label: string; icon: (props: { size?: number; className?: string }) => ReactNode }> = [
-  { tab: 'generate', label: '生成', icon: IconSparkleOutlineRegular },
-  { tab: 'mannequin', label: '素体', icon: IconUserOutlineRegular },
-  { tab: 'history', label: '历史', icon: IconClockOutlineRegular },
+const NAV_ITEMS: ReadonlyArray<{ tab: PanelTab; label: string; icon: ReactNode }> = [
+  { tab: 'generate', label: '生成', icon: <IconSparkleOutlineRegular size={16} /> },
+  { tab: 'mannequin', label: '素体', icon: <IconUserOutlineRegular size={16} /> },
+  { tab: 'history', label: '历史', icon: <IconClockOutlineRegular size={16} /> },
 ]
 
 export function ImageDesignPanel({ api }: { api: ImageDesignApi }): ReactNode {
@@ -139,28 +141,22 @@ export function ImageDesignPanel({ api }: { api: ImageDesignApi }): ReactNode {
 
   return (
     <div className="idi-root">
-      <nav className="idi-nav" aria-label="视图导航">
-        {NAV_ITEMS.map((item) => (
-          <button
-            key={item.tab}
-            type="button"
-            className="idi-nav-item"
-            data-active={s.tab === item.tab}
-            aria-current={s.tab === item.tab ? 'page' : undefined}
-            onClick={() => { setState({ tab: item.tab }) }}
-          >
-            <item.icon size={16} />
-            <span>{item.label}</span>
-          </button>
-        ))}
-        <span className="idi-nav-spacer" />
-        {s.busy && (
+      <Sidebar
+        width={96}
+        footer={s.busy ? (
           <div className="idi-nav-busy">
             <Spinner />
             {elapsed !== null && <span className="idi-nav-busy-text">生成中 · {elapsed}s</span>}
           </div>
-        )}
-      </nav>
+        ) : undefined}
+      >
+        <SidebarNav
+          label="视图导航"
+          value={s.tab}
+          onSelect={(v) => { setState({ tab: v as PanelTab }) }}
+          items={NAV_ITEMS.map((item) => ({ value: item.tab, label: item.label, icon: item.icon }))}
+        />
+      </Sidebar>
       <div className="idi-content">
         {s.error !== '' && (
           <div className="idi-error" role="alert">

@@ -10,6 +10,8 @@
 // dsh-ui-cell 基础层：间距刻度 --dsh-space-*，组件样式靠它解析，必须排注入第一位
 // （0.6.1 复制件起，组件内的间距一律走刻度变量；漏注入 = 那条声明被静默丢弃）
 import { styles as foundationStyles } from './ui/foundation-css.ts'
+import { styles as sidebarStyles } from './ui/sidebar-css.ts'
+import { styles as sidebarNavStyles } from './ui/sidebar-nav-css.ts'
 import { styles as buttonStyles } from './ui/button-css.ts'
 import { styles as inputStyles } from './ui/input-css.ts'
 import { styles as textareaStyles } from './ui/textarea-css.ts'
@@ -33,21 +35,9 @@ export const PANEL_CSS = `
   height: 100%; min-width: 0; color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-bg-layer-1); }
 
-/* 侧栏导航：竖排图标 + 文字；busy 指示钉在底部 */
-.idi-nav { flex: none; width: 68px; display: flex; flex-direction: column;
-  align-items: stretch; gap: 4px; padding: 10px 6px;
-  border-right: 0.5px solid var(--dsw-alias-border-l2); }
-.idi-nav-item { display: flex; flex-direction: column; align-items: center; gap: 3px;
-  padding: 8px 2px; border: none; background: transparent; cursor: pointer;
-  border-radius: var(--dsw-radius-md); font-size: 11px; line-height: 16px;
-  color: var(--dsw-alias-label-secondary); }
-.idi-nav-item:hover { background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary); }
-.idi-nav-item[data-active="true"] { background: var(--dsw-alias-interactive-bg-active);
-  color: var(--dsw-alias-state-business-primary); }
-.idi-nav-spacer { flex: 1; }
-.idi-nav-busy { flex: none; display: flex; flex-direction: column; align-items: center;
-  gap: 4px; padding: 4px 0; }
+/* 侧栏：duc-sidebar（壳，宽 96px 由 Sidebar 的 width prop 给）+ duc-sidebar-nav（条目），
+   busy 指示放 Sidebar 的 footer 槽（idi-nav-busy 只管槽内竖排布局） */
+.idi-nav-busy { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .idi-nav-busy-text { font-size: 10px; line-height: 14px;
   color: var(--dsw-alias-label-tertiary); white-space: nowrap; }
 
@@ -197,9 +187,12 @@ export const PANEL_CSS = `
 
 /* 0.6.1 升级：照 add note 的依赖序重排（foundation 第一）。
  * menu / menu-group / menu-surface / toast / card / scroll-area / skeleton /
- * zoom-controls 是闭包带出的未用复制件（0 处引用），维持不接线。 */
+ * zoom-controls 是闭包带出的未用复制件（0 处引用），维持不接线。
+ * 007/008 迭代补复制 sidebar + sidebar-nav（issue 008 迁移侧栏导航），按 add note
+ * 依赖序紧随 foundation（无其他复制件依赖它们，也不依赖别件）。 */
 const CELL_STYLES = [
   foundationStyles,
+  sidebarStyles, sidebarNavStyles,
   buttonStyles, emptyStyles, fieldStyles, imagePreviewStyles, imageLightboxStyles,
   inputStyles, labelStyles, shortcutKeysStyles, tooltipStyles,
   segmentedControlStyles, selectStyles, separatorStyles, sliderStyles,

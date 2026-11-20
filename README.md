@@ -176,7 +176,7 @@ src/remote.ts      Typert Remote 契约（codegen 单一来源，标准装饰器
 src/client/index.tsx 浏览器半边入口（tab 类型 + guide 清单条目 + pane 槽位注册 + $mount）
 src/client/ImageDesignIcon.tsx 清单条目图标（读生成的 icon-art，data URI 渲染）
 src/client/generated/icon-art.ts 图标美术生成物（由 icon.svg 生成，勿手改）
-src/client/App.tsx   面板本体（表单 / 画廊 / 对比浮层 / 历史视图）
+src/client/App.tsx   面板本体（侧栏导航 + 表单 / 画廊 / 对比浮层 / 历史视图）
 src/client/MannequinView.tsx 素体视图（视口 + 体型滑杆 / 姿势 / 机位 / 拍摄 / 参考图列表）
 src/client/mannequin/body.ts  体型参数面 + 参数→形变指令（围度剖面 / 肢体链 / 骨链长度）
 src/client/mannequin/shape.ts 网格形变（1D 围度剖面 + 软遮罩空间场 + 胸廓双峰）

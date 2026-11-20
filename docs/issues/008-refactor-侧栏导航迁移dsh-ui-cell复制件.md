@@ -39,9 +39,11 @@ issue 007 把三视图入口从顶栏 Tab 改成左侧栏时，用的是手写 `
   96px 才容得下两字标签；旧手写版的竖排 icon 上文字下的形态是自造观感，弃。
 - 收起/展开交互（用户复验后点名要的，初版曾判「面板无收起需求」而否决）：受控
   `navCollapsed` 进 ClientState，`Sidebar collapsed / onCollapsedChange` 接线；
-  header 槽放收起钮（chevron 方向随态翻转 + `aria-expanded`），`collapsedWidth 48`
-  下条目自动图标化（label 转 title 悬浮提示，SidebarNav 收起态自理）；收起态
-  busy 只留 spinner（48px 容不下「生成中 · Ns」）。
+  header 槽放收起钮，`collapsedWidth 48` 下条目自动图标化（label 转 title 悬浮
+  提示，SidebarNav 收起态自理）；收起态 busy 只留 spinner（48px 容不下
+  「生成中 · Ns」）。按钮图标按用户第二次反馈换**常规侧栏折叠图标**
+  `panel-left-outline`（`IconPanelLeftOutlineRegular`，自官方 artwork.ts 提取；
+  两态同一枚，状态由 `aria-expanded` 表达，不再用 chevron 翻转）。
 
 ## 影响面
 
@@ -65,3 +67,4 @@ issue 007 把三视图入口从顶栏 Tab 改成左侧栏时，用的是手写 `
 
 - 2026-11-20 08:22  jianan  创建；同轮完成迁移，typecheck / test / build 全绿 + 实机复验通过，直接关闭
 - 2026-11-20 08:26  jianan  迭代（用户复验后要求）：补收起/展开交互，受控 navCollapsed + header 槽收起钮 + collapsedWidth 48；实机复验收起/展开通过
+- 2026-11-20 08:35  jianan  迭代（用户反馈）：收起钮换常规侧栏折叠图标 panel-left-outline（两态同枚，aria-expanded 表达状态）；DSH 实例中途重启过一轮（地址变 64730），重连后 DOM 级复验收起/展开两态通过

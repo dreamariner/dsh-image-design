@@ -61,6 +61,8 @@ export const PANEL_CSS = `
 
 .idi-sec { display: flex; flex-direction: column; gap: 8px; }
 .idi-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* 行内按钮不吃挤压：内容区改窄后「生成」主按钮曾被提示词挤成竖排字（2026-11-20 实机） */
+.idi-row > .duc-button { flex: none; }
 .idi-row-wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .idi-grow { flex: 1; min-width: 0; }
 .idi-w80 { width: 80px; flex: none; }

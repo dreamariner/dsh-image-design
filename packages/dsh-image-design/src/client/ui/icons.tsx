@@ -199,6 +199,11 @@ export const IconClockOutlineRegular = ({ size = 16, className }: IconProps) => 
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="none" strokeWidth={1} aria-hidden="true"><path d="M8 14C11.3137 14 14 11.3137 14 8C14 4.68629 11.3137 2 8 2C4.68629 2 2 4.68629 2 8C2 11.3137 4.68629 14 8 14Z" stroke="currentColor"></path><path d="M8 4.31V8.46L11 10.08" stroke="currentColor"></path></svg>
 )
 
+/** Regular one-pixel panel-left-outline artwork（自 artwork.ts svg(1) 提取，权重已内联；侧栏收起/展开钮用）. */
+export const IconPanelLeftOutlineRegular = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="none" strokeWidth={1} aria-hidden="true"><path d="M13.5 1.5H2.5C1.94772 1.5 1.5 1.94772 1.5 2.5V13.5C1.5 14.0523 1.94772 14.5 2.5 14.5H13.5C14.0523 14.5 14.5 14.0523 14.5 13.5V2.5C14.5 1.94772 14.0523 1.5 13.5 1.5Z" stroke="currentColor"></path><path d="M5.5 1.5V14.5" stroke="currentColor"></path></svg>
+)
+
 /** 通用 globe 图标（markdown 链接前缀用）。 */
 export const IconGlobeOutlineRegular = (props: IconProps) => (
   <IconGlobeOutlineArtwork {...props} strokeWidth={ICON_REGULAR_STROKE} />

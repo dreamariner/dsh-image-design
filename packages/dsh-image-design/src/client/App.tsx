@@ -24,7 +24,7 @@ import { getState, patchForm, setState, useClientState, type FormState, type Pan
 import { MannequinView } from './MannequinView.tsx'
 import { Sidebar } from './ui/sidebar.tsx'
 import { SidebarNav } from './ui/sidebar-nav.tsx'
-import { IconChevronLeftOutlineRegular, IconChevronRightOutlineRegular, IconClockOutlineRegular, IconSparkleOutlineRegular, IconUserOutlineRegular } from './ui/icons.tsx'
+import { IconClockOutlineRegular, IconPanelLeftOutlineRegular, IconSparkleOutlineRegular, IconUserOutlineRegular } from './ui/icons.tsx'
 
 const IMAGE_KEY = (runId: string, file: string): string => `${runId}/${file}`
 
@@ -155,9 +155,8 @@ export function ImageDesignPanel({ api }: { api: ImageDesignApi }): ReactNode {
             aria-expanded={!s.navCollapsed}
             onClick={() => { setState({ navCollapsed: !s.navCollapsed }) }}
           >
-            {s.navCollapsed
-              ? <IconChevronRightOutlineRegular size={14} />
-              : <IconChevronLeftOutlineRegular size={14} />}
+            {/* 常规侧栏钮：panel-left 图标两态同一枚，状态由 aria-expanded 表达 */}
+            <IconPanelLeftOutlineRegular size={14} />
           </Button>
         }
         footer={s.busy ? (

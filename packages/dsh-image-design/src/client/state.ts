@@ -81,6 +81,8 @@ export interface MannequinState {
 
 export interface ClientState {
   tab: PanelTab
+  /** 侧栏收起态（受控给 ui/sidebar.tsx 的 Sidebar）。 */
+  navCollapsed: boolean
   form: FormState
   /** 生成进行中（一次只允许一轮在面板上等待）。 */
   busy: boolean
@@ -129,6 +131,7 @@ export function initialForm(): FormState {
 function initialState(): ClientState {
   return {
     tab: 'generate',
+    navCollapsed: false,
     form: initialForm(),
     busy: false,
     startedAt: null,

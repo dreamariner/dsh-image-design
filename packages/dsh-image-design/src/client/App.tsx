@@ -24,7 +24,7 @@ import { getState, patchForm, setState, useClientState, type FormState, type Pan
 import { MannequinView } from './MannequinView.tsx'
 import { Sidebar } from './ui/sidebar.tsx'
 import { SidebarNav } from './ui/sidebar-nav.tsx'
-import { IconClockOutlineRegular, IconSparkleOutlineRegular, IconUserOutlineRegular } from './ui/icons.tsx'
+import { IconChevronLeftOutlineRegular, IconChevronRightOutlineRegular, IconClockOutlineRegular, IconSparkleOutlineRegular, IconUserOutlineRegular } from './ui/icons.tsx'
 
 const IMAGE_KEY = (runId: string, file: string): string => `${runId}/${file}`
 
@@ -143,10 +143,27 @@ export function ImageDesignPanel({ api }: { api: ImageDesignApi }): ReactNode {
     <div className="idi-root">
       <Sidebar
         width={96}
+        collapsedWidth={48}
+        collapsed={s.navCollapsed}
+        onCollapsedChange={(v) => { setState({ navCollapsed: v }) }}
+        header={
+          <Button
+            variant="ghost"
+            size="sm"
+            className="idi-nav-toggle"
+            aria-label={s.navCollapsed ? '展开侧栏' : '收起侧栏'}
+            aria-expanded={!s.navCollapsed}
+            onClick={() => { setState({ navCollapsed: !s.navCollapsed }) }}
+          >
+            {s.navCollapsed
+              ? <IconChevronRightOutlineRegular size={14} />
+              : <IconChevronLeftOutlineRegular size={14} />}
+          </Button>
+        }
         footer={s.busy ? (
           <div className="idi-nav-busy">
             <Spinner />
-            {elapsed !== null && <span className="idi-nav-busy-text">生成中 · {elapsed}s</span>}
+            {!s.navCollapsed && elapsed !== null && <span className="idi-nav-busy-text">生成中 · {elapsed}s</span>}
           </div>
         ) : undefined}
       >

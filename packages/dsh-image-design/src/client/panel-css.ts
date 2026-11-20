@@ -35,8 +35,10 @@ export const PANEL_CSS = `
   height: 100%; min-width: 0; color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-bg-layer-1); }
 
-/* 侧栏：duc-sidebar（壳，宽 96px 由 Sidebar 的 width prop 给）+ duc-sidebar-nav（条目），
-   busy 指示放 Sidebar 的 footer 槽（idi-nav-busy 只管槽内竖排布局） */
+/* 侧栏：duc-sidebar（壳，宽 96px 由 Sidebar 的 width prop 给，收起 48px）+ duc-sidebar-nav（条目），
+   header 槽放收起/展开钮，busy 指示放 footer 槽（idi-nav-busy 只管槽内竖排布局）。
+   收起钮占满 header 行宽并居中（收起后 header 内容宽只剩 24px，按钮自带 padding 会溢出被裁）。 */
+.idi-nav-toggle { width: 100%; justify-content: center; padding: 0; }
 .idi-nav-busy { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .idi-nav-busy-text { font-size: 10px; line-height: 14px;
   color: var(--dsw-alias-label-tertiary); white-space: nowrap; }
